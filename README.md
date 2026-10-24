@@ -1,0 +1,190 @@
+# Rami Marocain 71
+
+Le déplacement des cartes est désormais piloté par le pointeur avec aperçu explicite : [diagnostic et vérification dans Chrome fenêtré](docs/GLISSER-POINTEUR.md).
+
+Corrections des interactions : [Drag & Drop, Collage et annulation de prise](docs/CORRECTIONS-DRAG-DROP.md).
+
+Dernières corrections : [Défausse, annulation de prise et présentation](docs/CORRECTIONS-DEFAUSSE.md). Ce rapport remplace les anciennes mentions de prise toujours définitive : **Annuler la prise** est maintenant autorisé avant utilisation et avant toute autre action irréversible. Les refus gardent le code `Coup invalide` et peuvent inclure une raison française précise affichée dans l’interface.
+
+Projet JavaScript avec React + Vite, Express et Socket.IO. Salon multijoueur en français, équipes manuelles, préparation, chat et reconnexion automatique. Moteur autoritatif : distribution, pioche, défausse, tours, descente et collage provisoires, annulation et validation atomique à la défausse personnelle, récupération de Joker, ouvertures d’équipe, pénalités, historique et progression automatique des manches. Aucun bot.
+
+## Prérequis
+
+Node.js 20.19+ ou 22.12+ et npm.
+
+## Démarrage local
+
+```sh
+npm install
+npm run dev
+```
+
+Ouvrez http://localhost:5173. Le client transmet les connexions Socket.IO au serveur sur le port 3001. Pour tester plusieurs joueurs sur un ordinateur, utilisez des profils de navigateur distincts ou des navigateurs différents : les onglets d’un même profil partagent volontairement la même identité.
+
+Sous Windows, si PowerShell bloque `npm.ps1`, utilisez `npm.cmd install` et `npm.cmd run dev`.
+
+## Commandes
+
+- `npm run dev` : lance le client et le serveur ensemble.
+- `npm run dev:client` / `npm run dev:server` : lance chaque service séparément.
+- `npm run build` : compile le client dans `client/dist`.
+- `npm start` : sert le client compilé et Socket.IO sur http://localhost:3001 (exécuter le build avant).
+- `npm test` : tests du placement, du moteur de cartes et de l’intégration Socket.IO (salons, chat et jeu).
+- `npm run test:browser` : audit de l’interface réelle dans Chrome sans fenêtre, après `npm run build` (Node.js 22+ pour ce script). Chrome est recherché dans `C:/Program Files/Google/Chrome/Application/chrome.exe` ; `CHROME_PATH` permet d’indiquer un autre chemin absolu. Les captures et le rapport sont générés dans `.audit-artifacts/`, ignoré par Git.
+
+Le port du serveur peut être configuré via `PORT` (adapter aussi la cible proxy dans `client/vite.config.js` en développement).
+
+## Organisation
+
+- `client/` : interface React et configuration Vite.
+- `server/` : serveur Express et gestion des salons Socket.IO.
+
+## Fonctionnement du salon
+
+- L’hôte choisit le mode avant de créer le salon : Individuel (2 à 4 joueurs) ou Équipes (exactement 4, 2 contre 2).
+- Chaque joueur choisit sa préparation. En mode Équipes, chacun choisit manuellement A ou B, avec 2 places par équipe. Un changement d’équipe ou une déconnexion dans le salon remet le joueur à « Pas prêt ».
+- Seul l’hôte peut lancer la partie. Le serveur exige que tous les joueurs soient connectés et prêts, avec le bon nombre de joueurs et, en équipes, exactement 2 joueurs dans chaque équipe.
+- Une déconnexion réserve la place et conserve l’identité et l’équipe. L’hôte est remplacé par le joueur connecté arrivé le plus tôt. Un ancien hôte reconnecté ne reprend pas automatiquement le rôle à l’hôte actuel.
+- Un jeton secret est stocké dans le `localStorage` du navigateur. Le client le transmet à `room:resume` après chaque connexion, y compris après un rechargement. Ce jeton ne figure jamais dans les listes publiques des joueurs.
+- Une identité ne peut avoir qu’une connexion active : reprendre la session dans un autre onglet déconnecte l’onglet précédent. Deux joueurs peuvent avoir le même pseudo, mais ont des identifiants et des jetons distincts.
+- « Quitter le salon » demande confirmation. Avant le premier lancement, la place est libérée et le jeton invalidé. Après le lancement, le jeton et l’identité sont réservés : le départ annule la manche en cours et renvoie tous les joueurs au salon, sans supprimer les scores terminés. Le joueur d’origine doit revenir avec son jeton ; aucun remplaçant n’est admis.
+- Le lancement distribue les cartes et affiche la table chez tous les joueurs. Les nouveaux joueurs sont ensuite refusés ; les joueurs d’origine disposant d’un jeton valide peuvent toujours se reconnecter et récupérer leur main et leur phase de tour.
+
+Les salons, sessions et parties restent en mémoire, y compris si tous les joueurs sont temporairement déconnectés. Ils disparaissent au redémarrage du serveur ; un salon sans partie commencée est également supprimé lorsque tous les joueurs le quittent explicitement. Une partie commencée conserve ses places et son historique même après le départ explicite de tous les joueurs. Il n’y a pas encore de persistance en base de données ni d’expiration des places réservées. Le tour attend la reconnexion du joueur actif ; aucun remplacement ni saut automatique n’est effectué. Un départ explicite annule la manche et son compte à rebours éventuel, puis exige le retour et la préparation de tous les joueurs d’origine au salon.
+
+## Vérification
+
+`npm test` couvre les validations du salon, le chat, la reconnexion, le placement, les 108 cartes uniques, les distributions à 2–4 joueurs, les rotations, les phases, les coups illégaux, les actions concurrentes, la confidentialité des mains et le recyclage de la pioche (également via Socket.IO). `npm run build` vérifie la compilation du client.
+
+L’audit reproductible est détaillé dans [docs/AUDIT.md](docs/AUDIT.md). Les tests complets de partie utilisent des distributions serveur déterministes de 15/14 cartes pour terminer deux manches en individuel à 2, 3 et 4 joueurs et en 2v2, sans réécrire l’état pendant les coups. Le moteur de production conserve son mélange sécurisé et son premier joueur aléatoire. Le navigateur exécute ces quatre parties avec de vrais contextes et connexions isolés, puis deux scénarios ciblés de milieu de manche : récupération de Joker/reconnexion et ouverture depuis Défausse. Un compte à rebours utilise les 15 secondes réelles ; les autres progressions utilisent l’horloge serveur injectable de test. Aucun endpoint de test ni bot n’est ajouté au jeu.
+
+## Table et moteur de cartes
+
+Après le lancement depuis le salon, la table occupe l’écran de bureau (largeur minimale : 1 200 px ; hauteur minimale : 820 px). L’affichage est vérifié à 1440×900 et 1280×820, avec les commandes et le chat visibles même après une erreur. Le joueur courant est en bas ; son coéquipier est en face en mode Équipes. Les zones Suites, Tierces et Carrés affichent les groupes de chaque joueur et défilent si nécessaire. Les cartes posées ne se recouvrent pas : chaque Joker et chaque commande restent cliquables.
+
+`server/src/game.js` gère toutes les cartes et mutations. Chaque manche utilise deux jeux standards et quatre Jokers, soit 108 identifiants physiques opaques et uniques, mélangés par Fisher–Yates avec `node:crypto.randomInt`. Le premier donneur de tour est tiré au sort : il reçoit 15 cartes, les autres 14. Il commence par défausser sans piocher et transmet le droit de pioche au suivant. Après chaque pioche, ce droit avance immédiatement en sens horaire, mais le joueur qui vient de piocher garde une préparation personnelle et doit encore défausser. Le suivant peut piocher au stock tout de suite ou attendre une nouvelle défausse. Plusieurs joueurs peuvent donc devoir défausser en même temps. `mustDiscard` empêche chacun de repiocher avant d’avoir terminé sa propre défausse, même si le droit de pioche lui est déjà revenu. La défausse normale ne déplace pas ce droit ; seule la toute première défausse le transmet.
+
+Le sens horaire correspond à bas → gauche → haut → droite à quatre joueurs. Le serveur fixe les sièges ; en équipes, ils alternent A/B et les coéquipiers sont opposés. Le constructeur de manche prend en charge la rotation horaire du premier joueur pour les manches suivantes. Après une manche terminée, le serveur lance automatiquement la suivante au bout de 15 secondes si la partie continue, sans bouton ni nouvelle préparation.
+
+La pioche vide est reconstituée à la prochaine demande de pioche en mélangeant toutes les cartes de la défausse sauf la dernière. S’il n’existe aucune carte recyclable, la demande est refusée. La défausse commence vide et apparaît après le premier coup. Un joueur ouvert peut prendre la dernière carte. Un joueur non ouvert peut prendre la dernière carte en main puis préparer son ouverture. Sa défausse personnelle reste bloquée tant que l’ouverture applicable n’est pas complète ; la carte prise ne peut pas satisfaire les groupes purs obligatoires ordinaires. La prise peut être annulée avant utilisation et avant une autre action irréversible ; les poses restent annulables jusqu’à la défausse personnelle.
+
+Les cartes et les quantités proviennent exclusivement du serveur. Les adversaires affichent des dos et des comptes pour les cartes en main. Les groupes posés, y compris provisoires, sont publics. Scores affiche les pénalités et cumuls réels ; Historique liste toutes les manches terminées, leurs gagnants et leurs cumuls à cet instant. Aucun score fictif n’est utilisé.
+
+### Protocole du jeu
+
+L’hôte peut envoyer `room:threshold` avec `{ threshold }` avant le premier lancement : entier positif, au plus 1 000 000 000, valeur par défaut 500. Toute modification annule la préparation de tous les joueurs. `room:create` accepte également ce paramètre. Le seuil est ensuite verrouillé pour préserver les conditions de la partie, y compris après une interruption. Les vues publiques et privées contiennent `match` avec les cumuls, l’historique, le gagnant éventuel, `nextRoundAt` et `serverNow` ; aucune commande client ne peut terminer une manche, envoyer des points ou avancer le compte à rebours.
+
+- `room:update` contient uniquement une projection publique du jeu (comptes, ordre, phase et dernière carte défaussée).
+- `game:update` est envoyé individuellement à chaque connexion authentifiée : même projection publique, plus uniquement sa propre main.
+- `game:state` récupère cette projection privée, notamment après reconnexion.
+- `game:draw` attend `{ source: 'stock' | 'discard', revision, cardId?, target? }`. Pour la Défausse, `cardId` identifie le sommet affiché ; `target: { ownerId, groupId }` propose un Collage immédiat réservé à un joueur déjà ouvert. La prise et le Collage sont atomiques : si l’ajout échoue, rien n’est pris.
+- `game:stage` attend `{ groups, revision }`, avec les propositions décrites dans l’API des combinaisons.
+- `game:collage` attend `{ ownerId, groupId, cardIds, side?, revision }` : cartes naturelles détenues en main, dans l’ordre d’ajout ; `side` vaut `auto` (par défaut), `prepend` ou `append`.
+- `game:joker-recover` attend `{ ownerId, groupId, jokerId, cardId, revision }` ; `cardId` désigne la carte naturelle de remplacement en main.
+- `game:joker-reverse` attend `{ ownerId, groupId, jokerId, revision }` et inverse cet échange si le Joker est en main.
+- `game:undo` attend `{ all: boolean, revision }` ; `game:retrieve` attend `{ groupId, cardId?, revision }`.
+- `game:cancel-discard` attend `{ cardId?, revision }` : remet exactement la carte prise, avant utilisation et toute nouvelle action irréversible. Le bouton **Annuler la prise** et le glissé de cette carte vers la Défausse rétablissent le choix de pioche. Une autre pioche/défausse interdit ce retour ; aucun état adverse n’est rembobiné.
+- `game:discard` attend `{ cardId, revision, turnRevision }`, engage les seules poses du joueur et lève sa propre obligation, indépendamment du joueur qui détient actuellement le droit de pioche. La version personnelle évite qu’une action adverse indépendante bloque une défausse légale ; toutes les validations courantes restent appliquées. Seule la défausse de la dernière carte termine une manche.
+
+Tous les événements de mutation `game:*` ci-dessus exigent également `roundId`, l’identifiant opaque de la distribution présent dans chaque vue du jeu. Il change à chaque redistribution, même lorsqu’une manche annulée reprend le même numéro. Le serveur déduit l’identité de la connexion, vérifie cette distribution, le tour, la phase, la possession de la carte et la révision courante, et renvoie exactement `Coup invalide` en cas de refus. Révision et `roundId` empêchent une double pioche ou la réexécution d’un ancien coup après reconnexion ou annulation. Le client applique le même ordre aux diffusions, acquittements et réponses de resynchronisation ; un ancien acquittement ne peut pas écraser une nouvelle manche. Le client ne déplace aucune carte avant confirmation serveur ; seule la sélection visuelle d’une carte reste locale. La sélection est verrouillée pendant une requête de jeu. Un brouillon local non envoyé est fermé lors d’une interruption ; les poses provisoires autoritatives restent conservées par le serveur.
+
+### Validation pure des combinaisons et de l’ouverture
+
+Le module serveur `server/src/combinations.js` exporte `validateCombination(proposal, availableCards)` et `validateOpening(proposals, availableCards, options)`. Il valide les identifiants physiques contre une main fiable fournie par le serveur, sans modifier les entrées ni la partie. Les Suites sont ordonnées, les substitutions de Joker explicites et les points naturels séparés du total posé. L’ouverture ordinaire exige une Suite pure, une Tierce pure et 71 points naturels ; un groupe contenant la carte juste prise à la défausse ne satisfait pas les groupes obligatoires.
+
+La [documentation de l’API](server/src/combinations.md) décrit les propositions, les résultats et les règles de points. Les tests couvrent notamment les 312 fenêtres de Suites naturelles et les 2 080 placements possibles d’un Joker, les deux As en Suite de 14 cartes, les deux jeux physiques, les groupes purs et les limites de 69 à 72 points. `server/src/descente.js` réutilise ces fonctions sans modifier leur contrat.
+
+### Descente, ouverture et annulation
+
+Après votre pioche et avant votre défausse personnelle, sélectionnez des cartes puis cliquez sur **Descendre**, même si le suivant a déjà pioché. Dans le composeur, sélectionnez chaque Suite dans son ordre croissant ; choisissez Tierce ou Carré selon le groupe. Ajoutez les groupes au projet et précisez la carte remplacée pour chaque Joker. **Descendre** envoie le projet au serveur et le rend immédiatement public. Ce bouton ne valide pas le tour : les cartes nouvellement posées restent entourées d’or jusqu’à votre défausse. Le premier joueur doit obligatoirement effectuer sa première défausse avant toute pose.
+
+Les groupes naturels peuvent être préparés progressivement même si l’ouverture est encore incomplète. Pour une ouverture ordinaire, un lot contenant un Joker n’est accepté avant ouverture que si l’ensemble proposé satisfait déjà les exigences ordinaires : une Suite pure et une Tierce pure sans la carte prise à la défausse, et au moins 71 points naturels. L’ouverture spéciale d’équipe suit sa règle de Suite valide, Joker autorisé, décrite plus bas. Les cartes naturelles d’un groupe avec Joker comptent comme dans le validateur existant ; le Joker n’entre jamais dans les points naturels. Le contrôle de l’escalade est effectué au précontrôle d’une prise conditionnelle et à la défausse finale.
+
+**Calcul exact du seuil :** pour le premier ouvrant, `pointsNaturels >= 71` et `totalPose >= 71`. Lors de sa défausse personnelle, le serveur fige `premierTotal` au **total final de tous ses groupes posés pendant ce tour**, Jokers compris, après les annulations/reprises. Pour chaque ouvrant ordinaire suivant : `pointsNaturels >= 71` **et** `totalPose >= premierTotal + 1`, avec les mêmes groupes purs obligatoires. La référence n’est jamais le meilleur total ultérieur. Exemple testé : première ouverture 72 ; deuxième ouverture 79 ; la troisième peut ouvrir à 73. Après ouverture, les nouveaux groupes des tours suivants ne repassent ni le seuil 71 ni l’escalade.
+
+**Annuler** revient à l’état précédant la dernière action de pose, collage ou reprise. **Tout annuler** restitue exactement la main après votre pioche et enlève toutes les poses et tous les collages provisoires, sans remonter au-delà d’une défausse ou pioche déjà engagée. Sélectionnez un nouveau groupe puis **Reprendre** pour le restituer entier. Un clic sur une carte dorée la reprend uniquement si le groupe restant reste valide ; un Carré de quatre nouvelles cartes devient une Tierce valide après une reprise individuelle. Une Suite ne peut pas être trouée. Les cartes engagées aux tours précédents ne changent jamais de contenu et ne sont jamais reprises ; leurs groupes peuvent être étendus par Collage. Seul un Joker peut être échangé contre sa carte naturelle exacte via la récupération décrite ci-dessous. Reprendre un Joker provisoire d’une nouvelle descente reste possible si le groupe restant est valide.
+
+La défausse d’une carte encore en main valide tout l’état provisoire, puis engage les groupes et l’ouverture éventuelle en une seule action synchrone, sans modifier le droit de pioche déjà transmis. Une ouverture incomplète, un seuil insuffisant ou un autre état illégal renvoie exactement **Coup invalide**, sans modifier la main, les piles, les poses ni le tour. Il faut conserver une carte pour cette défausse ; aucun bouton Confirmer n’existe.
+
+Pour prendre la Défausse, cliquez sur sa carte visible ou glissez-la dans votre main. Vous pourrez ensuite préparer une ouverture ordinaire ou spéciale d’équipe. Les poses et annulations restent propres à votre préparation. Si vous êtes déjà ouvert, vous pouvez aussi glisser une carte naturelle depuis la Défausse sur un groupe où le Collage est autorisé. Seul le sommet au moment de l’acceptation serveur peut être pris ; une révision ou un identifiant périmé renvoie **Coup invalide**.
+
+Les vues publiques montrent les groupes provisoires et engagés ainsi que les comptes des mains. Les mains restantes, les sauvegardes de départ et l’historique d’annulation ne sont jamais diffusés à d’autres joueurs. La reconnexion récupère les poses provisoires, la vraie main et les possibilités d’annulation. Les annulations n’émettent aucun message de notification ; seule la table se met à jour.
+
+En mode Équipes, le premier ouvrant de chaque équipe suit les conditions ordinaires ; son partenaire bénéficie ensuite de l’ouverture spéciale décrite ci-dessous. La durée de réservation des places et les abandons restent gérés comme décrit pour le salon.
+
+### Collage autoritatif
+
+Après une ouverture complète, glissez une carte naturelle de votre main sur un groupe, ou sélectionnez-la puis cliquez sur le groupe ou son bouton **Coller ici**. Le serveur choisit l’extrémité légale sans réordonner les cartes. L’API accepte également un lot ordonné à une extrémité explicite. Un Joker ne peut pas être collé, même dans un groupe qui n’en contient pas.
+
+- Vos groupes engagés et vos nouveaux groupes du tour sont accessibles après votre ouverture.
+- En équipes, les groupes du partenaire sont accessibles après votre propre ouverture, même si le total du partenaire est plus élevé.
+- Pour un adversaire, votre total d’ouverture enregistré doit être **strictement supérieur** au sien ; l’égalité est refusée. Les nouvelles poses des tours ultérieurs ne modifient pas ces totaux enregistrés.
+- Une Tierce de trois couleurs distinctes peut devenir un Carré avec la quatrième couleur. Aucun cinquième élément n’est permis. Une Suite ne peut être prolongée que de façon consécutive, sans dépasser 14 cartes. Le bloc original garde son ordre, ses identifiants et son éventuelle substitution de Joker.
+
+`server/src/collage.js` fournit les contrôles d’éligibilité, la validation des extensions et le plan de commit détaché. Les ajouts sont conservés dans `game.collages`, séparés des groupes de base. Les vues publiques exposent le groupe effectif et les identifiants des seuls ajouts du tour, entourés d’or. Les cartes engagées restent sans bordure dorée et inaccessibles à la reprise. **Ajouts**, puis **Reprendre**, restitue uniquement les cartes ajoutées à un groupe engagé ; un clic reprend un ajout individuel si le résultat reste valide et conserve le bloc engagé. Annuler et Tout annuler restaurent à la fois Descente et Collage. La reconnexion restitue ces états, sans révéler les autres mains ni l’historique d’annulation.
+
+**Interprétations retenues pour les règles ambiguës :**
+
+1. « Après la Descente, dans le même tour » signifie qu’une ouverture provisoire entièrement valide autorise le Collage avant la défausse. Pour comparer aux adversaires pendant ce tour, le serveur utilise le total de cette ouverture provisoire. Il revérifie l’ouverture et toutes les éligibilités au moment de défausser : reprendre des groupes et perdre le droit de coller bloque le commit, sans modifier la partie.
+2. Les ajouts aux **nouveaux groupes propres au joueur** font partie de son ouverture finale et de ses points naturels. Les ajouts aux groupes **déjà engagés**, qu’ils appartiennent au joueur, au partenaire ou à un adversaire, ne font pas partie de son ouverture. Ils ne permettent donc pas de gonfler artificiellement son total d’ouverture. Une extension de la seule Tierce obligatoire en Carré est refusée tant qu’elle supprimerait la validité de cette ouverture.
+3. Seules des cartes naturelles peuvent être ajoutées. Dans un Collage, le Joker déjà présent ne change jamais d’affectation (sa récupération constitue une action distincte), et aucune insertion ni réorganisation interne n’est acceptée. Après sélection multiple, l’ajout en lot garde exactement l’ordre soumis.
+4. L’ouverture spéciale d’équipe hérite du total d’éligibilité du premier coéquipier, avant le commit comme après. Le serveur renseigne `openingInheritedFrom` uniquement lors de la défausse personnelle qui engage l’ouverture spéciale. Aucun événement client ne peut écrire ce lien ; les liens étrangers, cycliques ou non valides ne donnent aucun droit sur un adversaire.
+
+La défausse personnelle revalide les combinaisons, la possession des ajouts, les droits sur chaque propriétaire et la conservation des cartes engagées, puis engage **toutes** les poses et tous les collages du tour dans la même action. Un refus renvoie **Coup invalide** et conserve le tour, la main et les modifications provisoires. Les tests comprennent le mode individuel, les équipes, les seuils adverses, les As, les Jokers existants, les limites des groupes, la reprise, l’annulation, la reconnexion, la confidentialité et le commit mixte.
+
+### Récupération et remplacement de Joker
+
+Après votre ouverture complète (y compris une ouverture provisoire valide avec son seuil courant), sélectionnez une carte naturelle puis cliquez sur le Joker à remplacer, ou déposez cette carte directement sur le Joker. Le serveur impose exactement le rang et la couleur de sa substitution publique, vérifie le groupe avant et après l’échange et conserve l’ordre et l’identité de toutes les autres cartes. Les groupes propres, du partenaire et des adversaires sont accessibles ; **le seuil adverse du Collage ne s’applique pas à cet échange**. Il continue de s’appliquer aux ajouts naturels ordinaires, même sur le groupe remplacé.
+
+Le Joker récupéré revient dans votre main avec la mention **À rejouer**. Chaque Joker récupéré doit être posé dans un nouveau groupe valide au cours du même tour. Il ne peut jamais être défaussé ; un Joker détenu avant le tour peut l’être normalement. La défausse personnelle revalide toutes les récupérations, tous les groupes et l’ouverture, puis engage l’ensemble atomiquement. Un Joker non réutilisé ou un état invalide renvoie **Coup invalide** sans terminer le tour.
+
+Les remplacements restent provisoires et dorés. **Annuler** inverse la dernière action chronologique, récupération comprise ; **Tout annuler** restaure la main au début du segment de pose courant, les positions initiales des Jokers et toutes les poses/Collages. **Rétablir le Joker** inverse un échange précis sans supprimer les autres ajouts. Si le Joker a déjà été rejoué, reprenez d’abord son nouveau groupe (ou sa carte si le groupe restant demeure valide), puis rétablissez-le. Une reprise qui laisse un Joker récupéré en main bloque de nouveau sa défausse et donc sa prochaine pioche.
+
+Le module interne `server/src/joker-state.js` exporte `replacementBase` (base immuable avec les seuls échanges autorisés), `prepareRecovery` / `restoreRecoveredJoker` (validation des échanges), `recoveryPendingIds` et `validateRecoveries` (obligation de réemploi au commit). `descente.js` exporte `recoverJoker` et `reverseJokerRecovery`, qui contrôlent le tour, les droits, les révisions et les sauvegardes. Le registre serveur `game.recoveries` garde les cartes physiques et substitutions initiales ; les overlays publics affichent le groupe effectif. Les sauvegardes, la main restante et la pioche restent privées. La reconnexion restitue exactement les remplacements, Jokers en main ou rejoués et possibilités d’annulation.
+
+**Interprétations retenues :** le réemploi se fait dans une nouvelle Descente valide ; le Collage reste réservé aux cartes naturelles. Plusieurs Jokers distincts peuvent être récupérés, mais un même Joker physique ne peut pas être récupéré une deuxième fois pendant ce tour sans d’abord inverser son premier échange. Un nouveau groupe qui sert de source à un échange actif ne peut pas être repris avant d’avoir rétabli son Joker ; cela évite de supprimer la source de l’échange. Les groupes étrangers ou déjà engagés ne participent pas au total d’ouverture du récupérateur. Une carte naturelle remplaçant un Joker dans son propre nouveau groupe participe aux points naturels de ce groupe ; les exigences de l’ouverture applicable et de défausse sont revérifiées normalement. La défausse finale valide aussi la victoire et les pénalités décrites ci-dessous.
+
+### Ouverture spéciale en équipes (2 contre 2)
+
+Le premier joueur à ouvrir **dans chaque équipe** suit l’ouverture ordinaire : 71 points naturels, une Suite pure et une Tierce pure sans la carte prise à la défausse, et un total supérieur d’au moins un point à la première ouverture de la manche lorsqu’elle existe. L’ouverture n’est réussie qu’après son engagement par défausse personnelle ; les poses provisoires d’un partenaire ne débloquent pas l’exception.
+
+Après cet engagement, son partenaire reste personnellement **Non ouvert**. Pour ouvrir à son tour, il doit poser au moins une Suite valide, avec ou sans Joker explicitement affecté. Il n’y a ni seuil de points, ni Tierce imposée, ni exigence de pureté, ni escalade pour cette ouverture spéciale. Les autres groupes du projet doivent aussi être valides. L’aide de la table et le composeur indiquent la règle applicable fournie par le serveur.
+
+Une ouverture spéciale provisoire complète autorise immédiatement le Collage et la récupération de Joker pendant ce même tour. Reprendre la seule Suite révoque ces droits ; la défausse refuse tout état restant illégal. Le Collage sur les groupes adverses compare toujours le **total enregistré du premier partenaire** au total d’éligibilité adverse, strictement : un total propre supérieur ou inférieur ne remplace pas ce total hérité. Si l’adversaire a lui-même ouvert par exception, son total d’éligibilité est également celui de son premier partenaire. Le total réellement posé par le joueur reste séparément enregistré dans `openingTotals` ; l’héritage est public dans `openingInheritedFrom`, sans divulgation de main.
+
+Une prise de Défausse par un joueur non ouvert reste en main jusqu’à la préparation puis à la validation de son ouverture. La Suite spéciale d’équipe peut utiliser cette carte, y compris un Joker ; l’exclusion des groupes purs obligatoires ordinaires reste appliquée. Annuler/Tout annuler ne rendent pas la carte prise et ne suppriment pas l’obligation d’ouverture. La reconnexion restaure toutes ces obligations et les préparations simultanées.
+
+`server/src/team-opening.js` exporte `teamOpeningDonor(game, playerId)` (éligibilité fondée sur les équipes serveur, exactement deux A et deux B, et l’ouverture engagée du partenaire) et `validateTeamOpening(proposals, cards, options)` (validation pure de tous les groupes, unicité des cartes, substitution des Jokers et présence d’une Suite). `descente.js` sélectionne la validation applicable ; `game.js` engage l’ouverture et son lien d’héritage ; `collage.js` applique le même héritage aux droits provisoires et engagés. Aucun total, statut d’ouverture ou partenaire déclaré par le client n’est utilisé comme autorité. Les sièges opposés et les contraintes du salon restent inchangés.
+
+### Fin de manche, pénalités et partie
+
+Il faut conserver une carte pour la défausse finale : vider sa main par Descente ou Collage seuls est refusé. La défausse valide d’abord toutes les poses, remplacements et obligations de réemploi, les engage atomiquement, puis termine immédiatement la manche si la main est vide. Un Joker détenu auparavant peut être cette dernière défausse ; un Joker récupéré pendant le tour ne le peut jamais. Tous les coups de cartes sont ensuite refusés avec **Coup invalide** jusqu’à la manche suivante.
+
+- Le joueur qui termine reçoit **0**. Tout autre joueur déjà ouvert reçoit **10 par carte restante**, Joker et rang indifférents. Tout joueur non ouvert reçoit **100**, quelle que soit la taille de sa main.
+- Une **Descente totale** exige que le joueur ne soit pas ouvert avant ce tour, ouvre légalement dans ce tour, pose toutes ses autres cartes et défausse la dernière. Les pénalités des adversaires sont alors doublées ; les groupes et annulations sont évalués dans leur état final engagé.
+- En équipes, l’équipe du joueur qui termine gagne immédiatement. Le coéquipier conserve sa pénalité ordinaire selon sa propre ouverture et sa main. Les pénalités et cumuls d’équipe sont les sommes des deux joueurs. La Descente totale ne double que les joueurs de l’équipe perdante.
+- Dès qu’un cumul de joueur (Individuel) ou d’équipe (Équipes) atteint le seuil, le plus petit cumul gagne la partie. Si plusieurs concurrents partagent le plus petit cumul, des manches supplémentaires se jouent jusqu’à leur départage. Les résultats intermédiaires et leurs cumuls sont conservés sans modification.
+
+Le **Tableau des scores** apparaît dès la défausse finale : noms, pénalités, cumuls, joueur et équipe gagnants, Descente totale éventuelle, totaux d’équipe et fin de partie. **Historique des manches** conserve chaque manche et les cumuls à sa fin. Le serveur fixe `nextRoundAt = fin + 15 000 ms`, puis redistribue automatiquement 108 nouvelles cartes avec rotation horaire du premier joueur, 15 cartes pour lui et 14 pour les autres. Le navigateur affiche seulement le temps restant ; il ne déclenche aucune transition. Une reconnexion restitue la même échéance, les vrais scores et les seules cartes privées du joueur. Une partie terminée n’a pas de compte à rebours ; son tableau reste consultable.
+
+Un départ explicite annule l’essai courant sans points ni entrée d’historique supplémentaires. Tous retournent au salon avec « Pas prêt », les équipes et identités figées et les scores terminés conservés. Le jeton du partant reste utilisable par **Revenir à mon salon réservé** ou après rechargement. Le nouvel hôte est le premier joueur connecté dans l’ordre d’arrivée initial. Aucun nouveau joueur ne peut occuper la place. Une fois tous les joueurs d’origine revenus et prêts, l’hôte relance ; les manches suivantes reprennent ensuite leur progression automatique. Une déconnexion de transport seule conserve la manche ; le tour attend le joueur actif, et le compte à rebours entre deux manches n’est pas réinitialisé.
+
+**Interprétations retenues :** le coéquipier gagnant paie sa pénalité ordinaire (y compris 100 s’il n’a pas ouvert), sans doublement. Une ouverture spéciale d’équipe peut constituer une Descente totale si toutes ses conditions sont satisfaites. Un essai annulé est redistribué avec le même numéro et le même premier joueur ; seul un résultat terminé fait avancer la rotation. Un départ pendant le tableau conserve le résultat déjà terminé et annule seulement la transition automatique. Le seuil est un entier de 1 à 1 000 000 000 et reste fixé après le premier lancement. Après une partie terminée, le tableau est conservé ; une nouvelle partie nécessite un nouveau salon.
+
+`server/src/scoring.js` exporte `roundResult` (pénalités d’une fin validée), `createMatch`, `recordRound` (cumuls, égalités et victoire), `teamTotals`, `validThreshold` et `matchView` (projection sans cartes). `game.js` détecte la dernière défausse après validation. `app.js` possède les échéances, transitions, places réservées et reprise du salon. L’horloge et le planificateur sont injectables uniquement côté serveur pour tester les 15 secondes sans attente réelle ; aucun événement Socket.IO ne peut les modifier. Les tests couvrent pénalités, Descente totale ordinaire et spéciale, Jokers, équipes, égalités prolongées, rotation, annulation, confidentialité, reconnexion et conservation des cartes.
+
+Le chat public est fonctionnel : le serveur authentifie les auteurs via leur session, valide les textes (300 caractères), limite la fréquence et conserve les 100 derniers messages par salon en mémoire. Les messages sont accessibles aux joueurs du salon, y compris après reconnexion. Aucun service ou visuel externe n’est requis pour les cartes, le motif zellige, la carte stylisée du Maroc ou les ornements architecturaux, dessinés en CSS et SVG locaux. La table n’utilise aucune animation.
+
+Les cartes de votre main se rangent par glisser-déposer, avec un repère doré à la position d’insertion. **Tri automatique** utilise un classement déterministe : Carrés et Tierces naturels (rangs croissants, couleurs distinctes), puis les plus longues Suites naturelles par couleur, puis les cartes restantes ; les Jokers restent à la fin sans substitution automatique. C’est une aide au rangement, pas un calcul de la meilleure ouverture. Les identifiants physiques départagent les doublons des deux jeux.
+
+Cet ordre reste privé et ne déclenche aucun événement de jeu. Le navigateur mémorise les identifiants par joueur et distribution dans `localStorage`, y compris les places des cartes provisoirement posées pour permettre leur retour avec Annuler. Les nouvelles cartes arrivent à la fin ; une nouvelle distribution possède son propre ordre. La reconnexion ou le rechargement dans le même navigateur conserve le rangement ; un autre navigateur ne le reçoit pas. Si le stockage local est indisponible, le rangement fonctionne pendant la session. Les glissés vers les groupes et Jokers gardent leurs validations serveur habituelles.
+
+## Sélection multiple et descente libre
+
+Les faces affichent **J, Q, K**, mais les rangs internes **V, D, R**, les points et les identifiants physiques ne changent pas. Cliquez plusieurs cartes puis saisissez une carte sélectionnée : toute la sélection se déplace dans son ordre visuel courant. Une carte non sélectionnée se déplace seule. Déposer dans la main ne produit aucun coup de jeu ; le tri automatique et les ancres privées pour Annuler restent disponibles.
+
+Déposez une sélection naturelle d’au moins trois cartes dans un espace libre de votre zone de Descente : un groupe proposé est ordonné et revérifié par le serveur. Avec un Joker, le composeur demande toujours une substitution explicite. Le bouton Descendre et les projets multiples restent utilisables. Les surfaces sont libres et défilables, sans cases par type ; les combinaisons déposées gardent leur position choisie. Déposer une carte sur un groupe ou son Joker conserve les interactions de Collage et de remplacement. Pour poser un nouveau groupe, visez l’espace libre de votre surface personnelle.
+
+La poignée **⠿** déplace une combinaison entière dans votre surface, y compris après engagement et hors de votre tour. Les positions normalisées publiques sont synchronisées et restaurées à la reconnexion. L’événement `game:move-group` attend `{ roundId, groupId, position: { x, y } }`, avec x/y finis entre 0 et 1 ; le serveur vérifie que le groupe appartient à l’émetteur. Il modifie seulement `groupPositions` et `layoutRevision`, jamais les cartes ni la révision des coups. Le client fusionne séparément les versions de jeu et de disposition pour résister aux acquittements tardifs et aux déplacements concurrents.
+
+**Tours chevauchants :** chaque joueur conserve sa préparation de la pioche à sa défausse. Piocher transmet immédiatement le droit suivant mais n’engage pas ses poses. La première défausse du donneur transmet ce droit sans pioche. Aucun joueur ne peut repiocher avant sa défausse précédente. Les poses, Collages et récupérations de Joker restent propres à chaque joueur et annulables jusqu’à sa défausse. Voir le [rapport des tours chevauchants](docs/TOURS-CHEVAUCHANTS.md) pour les conflits, réservations de groupes, scores et courses entre événements.

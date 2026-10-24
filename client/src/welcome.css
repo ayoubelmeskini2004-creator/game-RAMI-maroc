@@ -1,0 +1,52 @@
+.welcome-screen{
+  min-height:100vh;min-height:100svh;padding:28px 5vw 20px;
+  background:linear-gradient(#0003,#080b0870),url('./assets/rami-entre-amis.png') center center/cover no-repeat;
+  background-attachment:fixed;
+}
+.welcome-screen>header{max-width:980px}
+.welcome-screen .brand{color:#fff;font-size:23px}
+.welcome-screen .brand b{color:#c69b50}
+.welcome-screen .connection{color:#fff}
+.welcome-screen .connection .online{background:#56ae83}
+.welcome-screen .intro{margin:32px 0 22px;color:#fff;text-shadow:0 2px 14px #0008}
+.welcome-screen .intro .eyebrow{color:#d3a953;margin:0;font-size:10px}
+.welcome-screen .intro h1{font-size:52px;line-height:1.15;margin:14px 0}
+.welcome-screen .intro h1 span{color:#d0a352}
+.welcome-screen .intro>p:last-child{color:#fff;font-size:13px;margin:0;line-height:1.5}
+.welcome-screen>.panel{max-width:460px;padding:26px 34px 18px;background:rgba(250,248,242,.93);border:1px solid #fff9;box-shadow:0 18px 65px #0005;border-radius:16px;backdrop-filter:blur(5px)}
+.welcome-screen .suits{font-size:21px;letter-spacing:9px;margin-bottom:14px}
+.welcome-screen .suits span{color:#b96e58}
+.welcome-screen .panel h2{font-size:26px;color:#17483e}
+.welcome-screen .muted{color:#737b76;font-size:12px;margin-bottom:22px}
+.welcome-screen input{background:#fffaf0a6;border-color:#dcded1;min-height:44px}
+.welcome-screen label,.welcome-screen .mode-picker legend{color:#204d42;font-size:12px}
+.welcome-screen .mode-picker{margin-top:19px}
+.welcome-screen .mode-picker label{background:#fafbf3cc;border-color:#dbdfd0;margin-bottom:8px;padding:11px 14px;min-height:52px;cursor:pointer}
+.welcome-screen .mode-picker label:has(input:checked){border-color:#8eaa95;background:#f4f8ee}
+.welcome-screen .mode-picker input{min-height:0;flex-shrink:0}
+.welcome-screen .mode-picker small{color:#68776d}
+.welcome-screen form>button{background:#194f40;min-height:44px;margin-top:14px}
+.welcome-screen .divider{color:#758179;margin:20px 0}
+.welcome-screen .divider:before,.welcome-screen .divider:after{background:#d9dccc}
+.welcome-screen .join .secondary{background:#e8ebdf;color:#264e3b}
+.welcome-screen button:disabled{opacity:.6}
+.welcome-screen .footnote{color:#6c786e;font-size:9px;margin-top:20px}
+.welcome-screen>footer{color:#fff9;margin:16px 0 0;text-shadow:0 1px 5px #000}
+@media(max-height:880px) and (min-width:700px){
+ .welcome-screen{padding-top:20px;padding-bottom:16px}
+ .welcome-screen .intro{margin:18px 0 14px}
+ .welcome-screen .intro h1{font-size:46px;margin:10px 0}
+ .welcome-screen>.panel{padding:20px 32px 14px}
+ .welcome-screen .suits{margin-bottom:12px}
+ .welcome-screen .muted{margin-bottom:18px}
+ .welcome-screen .mode-picker label{padding-block:9px}
+ .welcome-screen .divider{margin:16px 0}
+ .welcome-screen>footer{margin-top:12px}
+}
+@media(max-width:699px){
+ .welcome-screen{padding:22px 18px;background-attachment:scroll}
+ .welcome-screen .intro{margin:30px 0 24px}
+ .welcome-screen .intro h1{font-size:clamp(30px,7.5vw,44px)}
+ .welcome-screen>.panel{padding:26px 22px 20px}
+ .welcome-screen .brand span{font-size:12px}
+}
