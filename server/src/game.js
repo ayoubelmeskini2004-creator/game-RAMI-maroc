@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { startTurnStaging, validateStagedCommit, openingStatus, openingMinimumTotal, stageCollage, stageGroups } from './descente.js';
-import { committedMelds, canCollageOn } from './collage.js';
+import { committedMelds, canCollageOn, jokerOpeningReady } from './collage.js';
 import { recoveryPendingIds } from './joker-state.js';
 import { teamOpeningDonor } from './team-opening.js';
 import { roundResult } from './scoring.js';
@@ -131,7 +131,7 @@ export function discardCard(game, playerId, payload) {
   const index=candidate.hands[playerId].findIndex(card=>card.id===payload?.cardId);
   if(index<0)throw moveError('La carte sélectionnée n’est plus dans votre main.');
   if(candidate.recoveries.some(record=>record.joker.id===payload.cardId))throw moveError('Ce Joker a été récupéré : rejouez-le dans une combinaison valide avant de défausser.');
-  if(recoveryPendingIds(candidate,candidate.staged.map(group=>candidate.collages.find(overlay=>overlay.ownerId===playerId&&overlay.groupId===group.id)?.group??group)).length)throw moveError('Rejouez tous les Jokers récupérés dans des combinaisons valides avant de défausser.');
+  if(recoveryPendingIds(candidate,[...candidate.staged.map(group=>candidate.collages.find(overlay=>overlay.ownerId===playerId&&overlay.groupId===group.id)?.group??group),...candidate.collages.map(overlay=>overlay.group)]).length)throw moveError('Rejouez tous les Jokers récupérés dans des combinaisons valides avant de défausser.');
   if(!candidate.opened[playerId]&&(candidate.staged.length||candidate.discardTakenCardId!==null)){
     const status=openingStatus(candidate,playerId);
     if(!status.valid)throw moveError(status.kind==='team'?'Ouverture d’équipe incomplète : posez au moins une Suite valide avant de défausser.':`Ouverture incomplète : une Suite pure, une Tierce pure, 71 points naturels et ${status.minimumTotal} points posés sont requis. La carte prise ne peut pas servir dans les groupes purs obligatoires.`);
@@ -187,11 +187,12 @@ export function privateGame(game, playerId) {
     canStage:game.phase!=='round-ended'&&!game.initialDiscard&&owes,
     teamOpeningEligible:teamOpeningDonor(game,playerId)!==null,
     canUndo:owes&&context.turnUndo.length>0,canCancelDiscard:returnReason===null,cancelPickupCardId:game.pickupReturns?.[playerId]?.cardId??null,cancelPickupReason:returnReason,blockedGroupIds,
+    jokerCollageTargets:game.order.filter(id=>canCollageOn(context,playerId,id,pending)||id===playerId&&jokerOpeningReady(pending)),
     collageTargets:game.order.filter(id=>canCollageOn(context,playerId,id,pending)),
     discardCollageTargets:game.opened[playerId]?game.order.filter(id=>canCollageOn(context,playerId,id)):[],
     canRecoverJoker:Boolean(game.opened[playerId]||pending?.valid),
     recoveredJokerIds:owes?context.recoveries.map(record=>record.joker.id):[],
-    pendingRecoveredJokerIds:owes?recoveryPendingIds(context,context.staged.map(group=>context.collages.find(overlay=>overlay.ownerId===playerId&&overlay.groupId===group.id)?.group??group)):[],
+    pendingRecoveredJokerIds:owes?recoveryPendingIds(context,[...context.staged.map(group=>context.collages.find(overlay=>overlay.ownerId===playerId&&overlay.groupId===group.id)?.group??group),...context.collages.map(overlay=>overlay.group)]):[],
     reversibleRecoveryIds:owes?context.recoveries.filter(record=>game.hands[playerId].some(card=>card.id===record.joker.id)).map(record=>record.joker.id):[],
     openingStatus:pending};
 }

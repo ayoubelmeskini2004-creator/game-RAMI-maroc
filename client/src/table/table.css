@@ -215,3 +215,5 @@
 
 .laid-card[data-pointer-drag="meld"]{touch-action:none;user-select:none;-webkit-user-drag:none;cursor:grab}
 .laid-card.return-selected-card{outline:2px solid #ffe09a;outline-offset:1px;box-shadow:0 0 0 3px #143c2d}
+
+.remote-meld-title{display:flex;justify-content:space-between;align-items:center;gap:8px}.remote-meld-title>span:first-child{overflow:hidden;text-overflow:ellipsis}.opening-points{flex:none;color:#ffe09a;font-size:10px;font-weight:500}.own-opening-score{position:absolute;top:52px;left:-120px;width:112px;padding:7px 4px;border:1px solid #bca46555;border-radius:5px;background:#123a2dcc;color:#e3d2a4;font-size:10px}.own-opening-score span,.own-opening-score strong{display:block}.own-opening-score strong{margin-top:4px;color:#ffe09a;font-size:12px}.joker-choice-backdrop{position:fixed;inset:0;z-index:10001;background:#071b14bb;display:grid;place-items:center}.joker-choice{width:360px;padding:24px;border:1px solid #bca465;border-radius:10px;background:#182d23;color:#e3d2a4}.joker-choice h2{font-size:20px}.joker-choice p{font-size:13px}.joker-choice button{display:block;width:100%;margin-top:10px}

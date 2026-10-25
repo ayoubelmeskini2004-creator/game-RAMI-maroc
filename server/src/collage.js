@@ -60,13 +60,20 @@ export function validatePreservedGroup(base, expanded) {
   return { id: base.id, type: result.type, cards: result.cards };
 }
 
-export function extendGroup(base, cards, side = 'auto') {
+export function extendGroup(base, cards, side = 'auto', joker) {
   check(['auto', 'prepend', 'append'].includes(side));
-  check(cards.length > 0 && cards.every((card) => card.rank !== 'Joker'));
+  check(cards.length > 0);
+  const addedJoker=cards.find(card=>card.rank==='Joker');
+  check(!addedJoker || cards.length===1&&joker?.cardId===addedJoker.id&&!base.cards.some(card=>card.rank==='Joker'));
+  check(addedJoker || joker===undefined);
   const results = [];
   for (const edge of side === 'auto' ? ['append', 'prepend'] : [side]) {
     const merged = edge === 'append' ? [...base.cards, ...cards] : [...cards, ...base.cards];
-    const expanded = { ...base, type: base.type === 'tierce' && merged.length === 4 ? 'carre' : base.type, cards: merged };
+    const type=base.type === 'tierce' && merged.length === 4 ? 'carre' : base.type;
+    const assignment=addedJoker?joker:proposal(base).joker;
+    const result=validateCombination({type,cardIds:merged.map(card=>card.id),...(assignment?{joker:assignment}:{})},merged.map(physicalCard));
+    if(!result.valid)continue;
+    const expanded = { ...base, type, cards: result.cards };
     try { results.push(validatePreservedGroup(base, expanded)); } catch { /* Try the other edge, never rearrange. */ }
   }
   check(results.length > 0);
@@ -92,8 +99,8 @@ export function validateCollageOverlays(game, playerId, pendingOpening) {
     check((actualAdded.length > 0 || hasRecovery) && actualAdded.length === overlay.addedCardIds.length
       && new Set(overlay.addedCardIds).size === overlay.addedCardIds.length);
     for (const card of actualAdded) {
-      check(card.rank !== 'Joker' && overlay.addedCardIds.includes(card.id) && !usedCards.has(card.id)
-        && game.turnBaseHand.some((original) => original.id === card.id && original.rank === card.rank && original.suit === card.suit));
+      check(overlay.addedCardIds.includes(card.id) && !usedCards.has(card.id)
+        && (game.turnBaseHand.some((original) => original.id === card.id && original.rank === card.rank && original.suit === card.suit)||game.recoveries.some(record=>record.joker.id===card.id&&card.rank==='Joker')));
       usedCards.add(card.id);
     }
   }
@@ -106,3 +113,16 @@ export function committedMelds(game, playerId) {
   laid[playerId].push(...game.staged.map((group) => structuredClone(effectiveGroup(game, playerId, group))));
   return laid;
 }
+
+// Enumerate legal explicit assignments; never guess a missing rank or suit.
+export function jokerExtensions(base,card){
+  if(card?.rank!=='Joker'||!base||base.cards.some(item=>item.rank==='Joker'))return [];
+  const results=[];
+  for(const side of base.type==='suite'?['append','prepend']:['append'])for(const suit of ['hearts','diamonds','clubs','spades'])for(const rank of ['A','2','3','4','5','6','7','8','9','10','V','D','R']){
+    const joker={cardId:card.id,rank,suit};
+    try{extendGroup(base,[physicalCard(card)],side,joker);results.push({side,joker});}catch{}
+  }
+  return results;
+}
+
+export const jokerOpeningReady=status=>!!status&&status.errors.every(error=>error.code==='OPENING_ESCALATION');

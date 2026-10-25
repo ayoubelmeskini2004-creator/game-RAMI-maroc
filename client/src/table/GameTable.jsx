@@ -10,6 +10,8 @@ import MeldAreas from './FreeMeldArea.jsx';
 import { CARD_DRAG_TYPE, DISCARD_DRAG_TYPE, validDiscardDrag, validHandDrag } from './hand-order.js';
 import { GROUP_DRAG_TYPE, naturalProposal } from './group-proposal.js';
 import './table.css';
+import { jokerExtensions } from '../../../server/src/collage.js';
+import { cardLabel } from './card-label.js';
 import { discardDrop } from './discard-drop.js';
 import usePointerDrag from './usePointerDrag.jsx';
 
@@ -24,6 +26,7 @@ function Seat({ playerId, player, position, hostId, teamMode, game, selected, on
       <span className="card-count"><small>{game?.opened[player.id] ? game.openingInheritedFrom[player.id] ? "Ouvert · équipe" : "Ouvert" : "Non ouvert"}</small>{count} cartes{game?.phase !== 'round-ended' && (game?.mustDiscard?.[player.id] || game?.activePlayerId === player.id) && <small>{game?.mustDiscard?.[player.id] ? game.activePlayerId === player.id ? 'Pioche après défausse' : 'À défausser' : 'Droit de pioche'}</small>}</span>
     </div>
     {own ? <>
+      <div className="own-opening-score"><span>Première Descente</span><strong>{game?.opened[player.id]?`${game.openingTotals[player.id]} points`:'Non descendu'}</strong></div>
       <MeldAreas name={player.name} player={player} game={game} own selected={selected} selectedGroup={selectedGroup} onGroupSelect={onGroupSelect} onRetrieve={onRetrieve} editable={editable} onCollage={onCollage} onDropCard={onDropCard} onRecover={onRecover} onReverse={onReverse} layoutEditable={layoutEditable} onFreeDrop={onFreeDrop} />
       {game && <PrivateHand key={`${playerId}:${game.roundId}`} game={game} playerId={playerId} selected={selected} onSelect={onSelect} locked={selectionLocked} onDiscardDrop={onDiscardDrop} onRetrieveDrop={onRetrieveDrop} />}
       <span className="hand-caption">Descente → main : sélection ou ⠿ · Collage/Jokers : glissez vers les groupes</span>
@@ -99,6 +102,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
   const [selected, setSelected] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [composer, setComposer] = useState(null);
+  const [jokerCollage,setJokerCollage]=useState(null);
   const [pending, setPending] = useState(false);
   const [moveError, setMoveError] = useState('');
   const inFlight = useRef(null);
@@ -114,7 +118,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
     inFlight.current = null;
     requestSequence.current++;
     setPending(false);
-    if (!connected) setComposer(null);
+    if (!connected) {setComposer(null);setJokerCollage(null);}
     const synchronize = () => {
       socket.timeout(5000).emit('game:state', {}, (timeout, response) => {
         if (!active) return;
@@ -138,7 +142,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
   useEffect(() => {
     inFlight.current = null;
     requestSequence.current++;
-    setPending(false); setSelected([]); setSelectedGroup(null); setComposer(null); setMoveError('');
+    setPending(false); setSelected([]); setSelectedGroup(null); setComposer(null); setJokerCollage(null); setMoveError('');
   }, [game?.roundId]);
   function move(event, payload) {
     if (!connected || inFlight.current !== null || !game) return;
@@ -185,13 +189,23 @@ export default function GameTable({ room, playerId, socket, connected, error, on
       move(action.event,{cardId:action.cardId});
     }catch{setMoveError('Seule la carte physique qui vient d’être prise peut être remise dans la Défausse.');}
   }
+  function collageCard(ownerId,groupId,cardId){
+    const card=game.hand.find(item=>item.id===cardId);
+    if(card?.rank!=='Joker'){move('game:collage',{ownerId,groupId,cardIds:[cardId]});return;}
+    const group=game.collages.find(item=>item.ownerId===ownerId&&item.groupId===groupId)?.group??game.staged.find(item=>item.ownerId===ownerId&&item.id===groupId)??game.laid[ownerId]?.find(item=>item.id===groupId);
+    const choices=jokerExtensions(group,card);
+    if(!choices.length){setMoveError('Ce Joker ne peut pas compléter cette combinaison : un seul Joker est autorisé par groupe.');return;}
+    const target={ownerId,groupId,cardIds:[cardId]};
+    if(choices.length===1)move('game:collage',{...target,...choices[0]});
+    else setJokerCollage({target,choices,revision:game.revision,roundId:game.roundId});
+  }
   function dropCard(event, ownerId, groupId, jokerId) {
     try {
       if(event.dataTransfer.types.includes(DISCARD_DRAG_TYPE)) {const data=JSON.parse(event.dataTransfer.getData(DISCARD_DRAG_TYPE));takeDiscard(data,{ownerId,groupId});return;}
       const data = JSON.parse(event.dataTransfer.getData('application/x-rami-card'));
-      if ((data.cardIds?.length ?? 1) !== 1 || !validHandDrag(data,data.cardId,game,playerId) || !game.hand.some((card) => card.id === data.cardId && card.rank !== 'Joker')) throw new Error();
-      if (jokerId) move('game:joker-recover', { ownerId, groupId, jokerId, cardId: data.cardId });
-      else move('game:collage', { ownerId, groupId, cardIds: [data.cardId] });
+      if ((data.cardIds?.length ?? 1) !== 1 || !validHandDrag(data,data.cardId,game,playerId) || !game.hand.some((card) => card.id === data.cardId)) throw new Error();
+      if (jokerId) {if(game.hand.find(card=>card.id===data.cardId).rank==='Joker')throw new Error();move('game:joker-recover', { ownerId, groupId, jokerId, cardId: data.cardId });}
+      else collageCard(ownerId,groupId,data.cardId);
     } catch { setMoveError('Coup invalide'); }
   }
   function freeDrop(event, position) {
@@ -203,6 +217,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
         return;
       }
       const data = JSON.parse(event.dataTransfer.getData(CARD_DRAG_TYPE));
+      if((data.cardIds?.length??1)===1&&game.hand.find(card=>card.id===data.cardId)?.rank==='Joker'){setMoveError('Glissez le Joker sur une combinaison, ou sélectionnez-le avec les cartes d’une nouvelle combinaison.');return;}
       if (!canStage || !validHandDrag(data, data.cardId, game, playerId) || (data.cardIds?.length ?? 1) < 3) throw new Error();
       const ids = data.cardIds;
       const cards = ids.map(id => game.hand.find(card => card.id === id));
@@ -217,6 +232,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
     'Pioche : '+activeName+(game.mustDiscard[game.activePlayerId]?' (défausse requise)':'')+(waitingNames?' · Défausse : '+waitingNames:'');
   return <main className="match-screen">
     {discardPointer.preview}
+    {jokerCollage&&<div className="joker-choice-backdrop"><section className="joker-choice" role="dialog" aria-modal="true" aria-label="Carte remplacée par le Joker"><h2>Le Joker remplace…</h2><p>Choisissez la carte manquante dans cette combinaison.</p>{jokerCollage.choices.map(choice=><button key={`${choice.side}-${choice.joker.rank}-${choice.joker.suit}`} disabled={pending} onClick={()=>{if(game.roundId!==jokerCollage.roundId||game.revision!==jokerCollage.revision){setMoveError('La table a changé. Déposez à nouveau votre Joker.');setJokerCollage(null);return;}move('game:collage',{...jokerCollage.target,...choice});setJokerCollage(null);}}>{cardLabel(choice.joker.rank)} {({hearts:'♥',diamonds:'♦',clubs:'♣',spades:'♠'})[choice.joker.suit]} · {choice.side==='prepend'?'début':'fin'}</button>)}<button className="secondary" onClick={()=>setJokerCollage(null)}>Annuler</button></section></div>}
     <header className="match-header">
       <a className="match-brand" href="/" aria-label="Rami Marocain 71, accueil">♠ <span>RAMI MAROCAIN <b>71</b></span></a>
       <div className="match-room"><span>SALON <strong>{room.code}</strong></span><span>{room.mode === 'teams' ? 'Équipes · 2 contre 2' : 'Individuel'}</span></div>
@@ -237,7 +253,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
             </div>
           </div>
             <p className="turn-status" role="status" title={turnLabel}><span aria-hidden="true">◉</span> {turnLabel}</p>
-          {Object.entries(seats).map(([position, player]) => <Seat key={position} playerId={playerId} player={player} position={position} hostId={room.hostId} teamMode={room.mode === 'teams'} game={game} selected={selected} onSelect={setSelected} selectedGroup={selectedGroup} onGroupSelect={setSelectedGroup} editable={canStage} onDiscardDrop={takeDiscard} onRetrieveDrop={selections=>move('game:retrieve',{selections})} layoutEditable={connected && !pending} onFreeDrop={freeDrop} selectionLocked={pending || !connected} onRetrieve={(groupId, cardId, ownerId) => move('game:retrieve', { groupId, cardId, ownerId })} onCollage={(ownerId, groupId, cardId) => move('game:collage', { ownerId, groupId, cardIds: [cardId] })} onDropCard={dropCard} onRecover={(ownerId, groupId, jokerId, cardId) => move('game:joker-recover', { ownerId, groupId, jokerId, cardId })} onReverse={(item) => move('game:joker-reverse', { ownerId: item.ownerId, groupId: item.groupId, jokerId: item.jokerId })} />)}
+          {Object.entries(seats).map(([position, player]) => <Seat key={position} playerId={playerId} player={player} position={position} hostId={room.hostId} teamMode={room.mode === 'teams'} game={game} selected={selected} onSelect={setSelected} selectedGroup={selectedGroup} onGroupSelect={setSelectedGroup} editable={canStage} onDiscardDrop={takeDiscard} onRetrieveDrop={selections=>move('game:retrieve',{selections})} layoutEditable={connected && !pending} onFreeDrop={freeDrop} selectionLocked={pending || !connected} onRetrieve={(groupId, cardId, ownerId) => move('game:retrieve', { groupId, cardId, ownerId })} onCollage={collageCard} onDropCard={dropCard} onRecover={(ownerId, groupId, jokerId, cardId) => move('game:joker-recover', { ownerId, groupId, jokerId, cardId })} onReverse={(item) => move('game:joker-reverse', { ownerId: item.ownerId, groupId: item.groupId, jokerId: item.jokerId })} />)}
         </div>
         <div className="table-actions" aria-label="Actions de jeu">
           <div className="undo-actions"><button disabled={!canStage || !game.canUndo} onClick={() => move('game:undo', { all: false })}>Annuler</button><button disabled={!canStage || !game.canUndo} onClick={() => move('game:undo', { all: true })}>Tout annuler</button>{game?.canCancelDiscard&&<button disabled={!available} onClick={()=>move('game:cancel-discard',{cardId:game.cancelPickupCardId})}>Annuler la prise</button>}</div>

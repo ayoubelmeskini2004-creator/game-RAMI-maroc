@@ -20,10 +20,10 @@ export default function FreeMeldArea({ name, player, game, own, selected, select
   const pointer=usePointerDrag({enabled:!!layoutEditable,scope:game?.roundId});
   const groups=[...(game?.laid[player.id]??[]),...(game?.staged.filter(group=>group.ownerId===player.id)??[])].map(group=>game.collages.find(overlay=>overlay.ownerId===player.id&&overlay.groupId===group.id)?.group??group);
   const stagedIds=new Set(game?.staged.map(group=>group.id));
-  const eligible=editable&&game?.collageTargets.includes(player.id);
+  const eligible=editable&&(game?.collageTargets.includes(player.id)||selected.length===1&&game?.hand.find(card=>card.id===selected[0])?.rank==='Joker'&&game?.jokerCollageTargets?.includes(player.id));
   const selectedCard=selected.length===1?game?.hand.find(card=>card.id===selected[0]):null;
   const recoverable=editable&&game?.canRecoverJoker;
-  const clickCollage=eligible&&selectedCard&&selectedCard.rank!=='Joker';
+  const clickCollage=eligible&&selectedCard;
   useEffect(()=>{
     setReturnSelection(current=>current.filter(id=>groups.some(group=>group.cards.some(card=>card.id===id))));
   },[groups.map(group=>group.cards.map(card=>card.id).join(',')).join('|'),game?.roundId]);
@@ -91,7 +91,7 @@ export default function FreeMeldArea({ name, player, game, own, selected, select
       const overlay=game.collages.find(item=>item.ownerId===player.id&&item.groupId===group.id);
       const ownOverlay=overlay?.actorId===game.viewerId;
       const blocked=game.blockedGroupIds?.includes(group.id);
-      const groupEligible=eligible&&!blocked&&(!staged||own);
+      const groupEligible=(eligible||editable&&game?.jokerCollageTargets?.includes(player.id))&&!blocked&&(!staged||own);
       const discardEligible=game.canDraw&&game.discardTop?.rank!=='Joker'&&game.discardCollageTargets?.includes(player.id)&&!staged&&!blocked;
       const groupClickCollage=clickCollage&&groupEligible;
       const position=game.groupPositions?.[group.id]??{x:(index%3)/2,y:Math.min(1,Math.floor(index/3)/2)};
@@ -137,7 +137,7 @@ export default function FreeMeldArea({ name, player, game, own, selected, select
     })}
     </div>;
   return <div ref={surface} className={`meld-areas free-meld-area ${own?'own-meld-area':`remote-meld-area ${!groups.length?'remote-meld-empty':''}`} ${over?'free-drop-over':''}`} aria-label={`Zone de descente de ${name}`} data-layout-owner={player.id}>
-    {!own&&<h3 className="remote-meld-title">Descente de {name}</h3>}
+    {!own&&<h3 className="remote-meld-title"><span>Descente de {name}</span><span className="opening-points">{game?.opened[player.id]?`${game.openingTotals[player.id]} points`:'Non descendu'}</span></h3>}
     {own?canvas:<div className="remote-meld-scroll" tabIndex={0} role="region" aria-label={`Combinaisons de ${name}`}>{canvas}</div>}
     {pointer.preview}
   </div>;

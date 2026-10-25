@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { validateCombination, validateOpening } from './combinations.js';
-import { effectiveGroup, findBaseGroup, canCollageOn, extendGroup, validatePreservedGroup, validateCollageOverlays } from './collage.js';
+import { effectiveGroup, findBaseGroup, canCollageOn, extendGroup, validatePreservedGroup, validateCollageOverlays, jokerOpeningReady } from './collage.js';
 import { replacementBase, prepareRecovery, restoreRecoveredJoker, validateRecoveries } from './joker-state.js';
 import { teamOpeningDonor, validateTeamOpening } from './team-opening.js';
 import { validPosition } from './group-layout.js';
@@ -188,7 +188,7 @@ export function validateStagedCommit(game, playerId) {
   const status = needsOpening ? openingStatus(game, playerId) : null;
   if (needsOpening) requireMove(status.valid);
   validateCollageOverlays(game, playerId, status);
-  validateRecoveries(game, playerId, status, game.staged.map((group) => effectiveGroup(game, playerId, group)));
+  validateRecoveries(game, playerId, status, [...game.staged.map((group) => effectiveGroup(game, playerId, group)),...game.collages.map(overlay=>overlay.group)]);
   return status;
 }
 
@@ -196,21 +196,23 @@ export function validateStagedCommit(game, playerId) {
 export function stageCollage(game, playerId, payload) {
   validateStagingTurn(game, playerId, payload);
   const base = findBaseGroup(game, payload?.ownerId, payload?.groupId);
-  requireMove(base && canCollageOn(game, playerId, payload.ownerId, game.opened[playerId] ? null : openingStatus(game, playerId)));
+  const pending=game.opened[playerId]?null:openingStatus(game,playerId);
+  const preparingJoker=!!payload.joker&&payload.ownerId===playerId&&game.staged.some(group=>group.id===payload.groupId)&&jokerOpeningReady(pending);
+  requireMove(base && (preparingJoker||canCollageOn(game, playerId, payload.ownerId,pending)));
   const ids = payload?.cardIds;
   requireMove(Array.isArray(ids) && ids.length > 0 && ids.length <= 11 && new Set(ids).size === ids.length
     && game.hands[playerId].length > ids.length);
   const cards = Array.from(ids).map((id) => game.hands[playerId].find((card) => card.id === id));
-  requireMove(cards.every((card) => card && card.rank !== 'Joker'));
+  requireMove(cards.every(Boolean));
   const current = effectiveGroup(game, payload.ownerId, base);
-  const expanded = extendGroup(current, cards.map(physical), payload.side ?? 'auto');
+  const expanded = extendGroup(current, cards.map(physical), payload.side ?? 'auto',payload.joker);
   const previous = game.collages.find((overlay) => overlay.ownerId === payload.ownerId && overlay.groupId === base.id);
   const overlay = { ownerId: payload.ownerId, groupId: base.id, group: expanded,
     addedCardIds: [...(previous?.addedCardIds ?? []), ...ids] };
   const collages = [...game.collages.filter((item) => item !== previous), overlay];
   const candidate = { ...game, collages, hands: { ...game.hands, [playerId]: game.hands[playerId].filter((card) => !ids.includes(card.id)) } };
   // A same-turn opening must remain complete (e.g. do not erase the only Tierce by making it a Carré).
-  if (!game.opened[playerId]) requireMove(openingStatus(candidate, playerId).valid);
+  if (!game.opened[playerId]) requireMove(preparingJoker?jokerOpeningReady(openingStatus(candidate,playerId)):openingStatus(candidate, playerId).valid);
   remember(game, playerId);
   game.collages = collages;
   game.hands[playerId] = candidate.hands[playerId];
