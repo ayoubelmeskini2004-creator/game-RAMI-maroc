@@ -13,7 +13,7 @@ import './table.css';
 import { discardDrop } from './discard-drop.js';
 import usePointerDrag from './usePointerDrag.jsx';
 
-function Seat({ playerId, player, position, hostId, teamMode, game, selected, onSelect, selectedGroup, onGroupSelect, onRetrieve, editable, selectionLocked, onCollage, onDropCard, onRecover, onReverse, layoutEditable, onFreeDrop, onDiscardDrop }) {
+function Seat({ playerId, player, position, hostId, teamMode, game, selected, onSelect, selectedGroup, onGroupSelect, onRetrieve, editable, selectionLocked, onCollage, onDropCard, onRecover, onReverse, layoutEditable, onFreeDrop, onDiscardDrop, onRetrieveDrop }) {
   if (!player) return null;
   const own = position === 'bottom';
   const count = game?.counts[player.id] ?? 0;
@@ -25,8 +25,8 @@ function Seat({ playerId, player, position, hostId, teamMode, game, selected, on
     </div>
     {own ? <>
       <MeldAreas name={player.name} player={player} game={game} own selected={selected} selectedGroup={selectedGroup} onGroupSelect={onGroupSelect} onRetrieve={onRetrieve} editable={editable} onCollage={onCollage} onDropCard={onDropCard} onRecover={onRecover} onReverse={onReverse} layoutEditable={layoutEditable} onFreeDrop={onFreeDrop} />
-      {game && <PrivateHand key={`${playerId}:${game.roundId}`} game={game} playerId={playerId} selected={selected} onSelect={onSelect} locked={selectionLocked} onDiscardDrop={onDiscardDrop} />}
-      <span className="hand-caption">Ordre privé · Collage et Jokers : glissez vers les groupes</span>
+      {game && <PrivateHand key={`${playerId}:${game.roundId}`} game={game} playerId={playerId} selected={selected} onSelect={onSelect} locked={selectionLocked} onDiscardDrop={onDiscardDrop} onRetrieveDrop={onRetrieveDrop} />}
+      <span className="hand-caption">Descente → main : sélection ou ⠿ · Collage/Jokers : glissez vers les groupes</span>
     </> : <>
       <div className="opponent-hand" aria-label={`${count} cartes face cachée`}>{Array.from({ length: count }, (_, i) => <PlayingCard key={i} faceDown />)}</div>
       <MeldAreas name={player.name} player={player} game={game} selected={selected} selectedGroup={selectedGroup} onGroupSelect={onGroupSelect} onRetrieve={onRetrieve} editable={editable} onCollage={onCollage} onDropCard={onDropCard} onRecover={onRecover} onReverse={onReverse} layoutEditable={layoutEditable} onFreeDrop={onFreeDrop} />
@@ -159,7 +159,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
       }
       if (!response.ok) { setMoveError(response.reason??response.error); return; }
       setGame((current) => acceptGame(current, response.game));
-      if (['game:discard', 'game:stage', 'game:collage', 'game:joker-recover', 'game:joker-reverse', 'game:draw', 'game:cancel-discard'].includes(event)) {
+      if (['game:discard', 'game:stage', 'game:collage', 'game:joker-recover', 'game:joker-reverse', 'game:draw', 'game:cancel-discard', 'game:retrieve'].includes(event)) {
         setSelected([]);
         setComposer(null);
       }
@@ -237,7 +237,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
             </div>
           </div>
             <p className="turn-status" role="status" title={turnLabel}><span aria-hidden="true">◉</span> {turnLabel}</p>
-          {Object.entries(seats).map(([position, player]) => <Seat key={position} playerId={playerId} player={player} position={position} hostId={room.hostId} teamMode={room.mode === 'teams'} game={game} selected={selected} onSelect={setSelected} selectedGroup={selectedGroup} onGroupSelect={setSelectedGroup} editable={canStage} onDiscardDrop={takeDiscard} layoutEditable={connected && !pending} onFreeDrop={freeDrop} selectionLocked={pending || !connected} onRetrieve={(groupId, cardId, ownerId) => move('game:retrieve', { groupId, cardId, ownerId })} onCollage={(ownerId, groupId, cardId) => move('game:collage', { ownerId, groupId, cardIds: [cardId] })} onDropCard={dropCard} onRecover={(ownerId, groupId, jokerId, cardId) => move('game:joker-recover', { ownerId, groupId, jokerId, cardId })} onReverse={(item) => move('game:joker-reverse', { ownerId: item.ownerId, groupId: item.groupId, jokerId: item.jokerId })} />)}
+          {Object.entries(seats).map(([position, player]) => <Seat key={position} playerId={playerId} player={player} position={position} hostId={room.hostId} teamMode={room.mode === 'teams'} game={game} selected={selected} onSelect={setSelected} selectedGroup={selectedGroup} onGroupSelect={setSelectedGroup} editable={canStage} onDiscardDrop={takeDiscard} onRetrieveDrop={selections=>move('game:retrieve',{selections})} layoutEditable={connected && !pending} onFreeDrop={freeDrop} selectionLocked={pending || !connected} onRetrieve={(groupId, cardId, ownerId) => move('game:retrieve', { groupId, cardId, ownerId })} onCollage={(ownerId, groupId, cardId) => move('game:collage', { ownerId, groupId, cardIds: [cardId] })} onDropCard={dropCard} onRecover={(ownerId, groupId, jokerId, cardId) => move('game:joker-recover', { ownerId, groupId, jokerId, cardId })} onReverse={(item) => move('game:joker-reverse', { ownerId: item.ownerId, groupId: item.groupId, jokerId: item.jokerId })} />)}
         </div>
         <div className="table-actions" aria-label="Actions de jeu">
           <div className="undo-actions"><button disabled={!canStage || !game.canUndo} onClick={() => move('game:undo', { all: false })}>Annuler</button><button disabled={!canStage || !game.canUndo} onClick={() => move('game:undo', { all: true })}>Tout annuler</button>{game?.canCancelDiscard&&<button disabled={!available} onClick={()=>move('game:cancel-discard',{cardId:game.cancelPickupCardId})}>Annuler la prise</button>}</div>

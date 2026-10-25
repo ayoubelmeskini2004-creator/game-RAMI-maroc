@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import PlayingCard from './PlayingCard.jsx';
 import usePointerDrag from './usePointerDrag.jsx';
+import { MELD_DRAG_TYPE, meldRetrieval } from './meld-drag.js';
+import { GROUP_DRAG_TYPE } from './group-proposal.js';
 import { handInsertion } from './pointer-drag.js';
 import { automaticOrder, CARD_DRAG_TYPE, DISCARD_DRAG_TYPE, moveCards, orderedHand, readOrder, reconcileOrder, replaceVisibleOrder, validHandDrag, validDiscardDrag } from './hand-order.js';
 
-export default function PrivateHand({ game, playerId, selected, onSelect, locked, onDiscardDrop }) {
+export default function PrivateHand({ game, playerId, selected, onSelect, locked, onDiscardDrop, onRetrieveDrop }) {
   const key = `rami71.hand:${playerId}:${game.roundId}`;
   const [order, setOrder] = useState(() => { try { return readOrder(window.localStorage, key); } catch { return []; } });
   const [insertion, setInsertion] = useState(undefined);
@@ -23,12 +25,23 @@ export default function PrivateHand({ game, playerId, selected, onSelect, locked
   return <>
     <div className={`own-hand ${insertion === null ? 'insert-at-end' : ''}`} style={{'--hand-gaps':Math.max(1,hand.length-1)}} aria-label="Votre main privée"
       onDragOver={(event) => {
+        const meldType=[MELD_DRAG_TYPE,GROUP_DRAG_TYPE].find(type=>event.dataTransfer.types.includes(type));
+        if(meldType){
+          try{if(!locked&&meldRetrieval(JSON.parse(event.dataTransfer.getData(meldType)),game,playerId,meldType)){event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move';setInsertion(position(event));}}catch{}
+          return;
+        }
         if (locked || !(source.current && event.dataTransfer.types.includes(CARD_DRAG_TYPE) || game.canDraw && event.dataTransfer.types.includes(DISCARD_DRAG_TYPE))) return;
         event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; setInsertion(position(event));
       }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setInsertion(undefined); }}
       onDrop={(event) => {
         event.preventDefault(); event.stopPropagation(); setInsertion(undefined);
         try {
+          const meldType=[MELD_DRAG_TYPE,GROUP_DRAG_TYPE].find(type=>event.dataTransfer.types.includes(type));
+          if(meldType){
+            const selections=!locked&&meldRetrieval(JSON.parse(event.dataTransfer.getData(meldType)),game,playerId,meldType);
+            if(selections)onRetrieveDrop(selections);
+            return;
+          }
           if(event.dataTransfer.types.includes(DISCARD_DRAG_TYPE)) {
             const data=JSON.parse(event.dataTransfer.getData(DISCARD_DRAG_TYPE));
             if(!locked&&validDiscardDrag(data,game,playerId)){

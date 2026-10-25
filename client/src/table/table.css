@@ -164,3 +164,54 @@
 .pointer-card-preview .playing-card+.playing-card{margin-left:-43px}
 .pointer-card-preview>span{display:block;width:max-content;background:#143c2d;color:#ffe09a;border:1px solid #c4a356;border-radius:4px;font-size:11px;padding:3px 7px;margin-top:4px}
 @media(min-width:1200px) and (max-height:860px){.seat-bottom .free-meld-area{height:88px;min-height:88px}.free-meld-area{height:60px;min-height:60px}.seat-bottom .free-meld-area .laid-card .playing-card{--card-width:28px}}
+
+/* Public descents: retain seats and palette, with readable, scrollable melds. */
+.seat-top{top:12px;width:clamp(330px,27vw,440px)}
+.seat-top .opponent-hand .playing-card{--card-width:28px}
+.seat-left,.seat-right{width:clamp(230px,18.5vw,310px)}
+.table-seat .remote-meld-area{height:clamp(132px,calc(24vh - 60px),200px);min-height:0;display:flex;flex-direction:column;overflow:hidden;margin-bottom:0;border-style:solid;background:#103a2dc9;text-align:left}
+.seat-top .remote-meld-area{height:clamp(80px,calc(22vh - 102px),145px)}
+.match-screen:has(.match-error) .seat-top .remote-meld-area{height:clamp(80px,calc(22vh - 114px),133px)}
+.seat-left .remote-meld-area{border-color:#a1b89080}
+.seat-right .remote-meld-area{border-color:#c4ab7277}
+.remote-meld-title{flex:none;margin:0;padding:3px 8px;border-bottom:1px solid #bca46544;color:#e3d2a4;font-size:11px;font-weight:600;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.remote-meld-scroll{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;scrollbar-color:#b49a5b #173f32;overscroll-behavior:contain;scroll-behavior:auto}
+.remote-meld-scroll:focus-visible{outline:1px solid #e0bd68;outline-offset:-2px}
+.remote-meld-scroll .free-meld-canvas{width:calc(100% - 12px);margin:6px;min-height:240px}
+.remote-meld-empty .free-meld-canvas{min-height:calc(100% - 12px);height:calc(100% - 12px)}
+.remote-meld-area .free-meld-hint{height:auto;bottom:0;color:#c9c7a4}
+.remote-meld-area .laid-group{padding:5px;border-color:#bca46588;background:#194d39;box-shadow:0 2px 4px #00190f55}
+.remote-meld-area .laid-cards{flex-wrap:wrap;gap:4px;overflow:visible}
+.remote-meld-area .laid-card .playing-card{--card-width:36px}
+.remote-meld-area .laid-card .card-corner b{font-size:12px}
+.remote-meld-area .laid-card .card-corner .suit-symbol{width:9px;height:10px}
+@media(min-height:861px){
+  /* Leave room between the enlarged top descent and the turn status. */
+  .table-center,.match-screen:has(.match-error) .table-center{top:41.5%}
+}
+@media(max-height:860px){
+  .seat-top,.match-screen:has(.match-error) .seat-top{top:4px}
+  .seat-top .opponent-hand .playing-card{--card-width:24px;margin-left:-20px}
+  .seat-top .opponent-hand .playing-card:first-child{margin-left:0}
+  .seat-top .remote-meld-area{height:92px;margin-top:1px}
+  .match-screen:has(.match-error) .seat-top .remote-meld-area{height:76px}
+}
+
+/* Give the opposite player the same descent width and usable height as the viewer. */
+.seat-top{width:min(620px,78%);display:grid;grid-template-columns:minmax(0,1fr) 110px;align-items:center;column-gap:12px}
+.seat-top .seat-identity{width:100%;max-width:360px;margin:0 auto;height:44px;padding:4px 8px}
+.seat-top .opponent-hand{margin:0;justify-self:center}
+.seat-top .remote-meld-area,.match-screen:has(.match-error) .seat-top .remote-meld-area{grid-column:1/-1;width:100%;height:126px;margin:5px 0 0}
+@media(min-width:1500px){.seat-top{width:min(680px,78%)}}
+@media(max-height:1000px){
+  .seat-left,.seat-right{top:calc(42% + 28px)}
+  .seat-left .remote-meld-area,.seat-right .remote-meld-area{height:112px}
+}
+@media(max-height:860px){
+  .seat-top .remote-meld-area,.match-screen:has(.match-error) .seat-top .remote-meld-area{height:110px}
+  .seat-left,.seat-right{top:calc(40% + 30px)}
+  .seat-left .remote-meld-area,.seat-right .remote-meld-area{height:94px}
+}
+
+.laid-card[data-pointer-drag="meld"]{touch-action:none;user-select:none;-webkit-user-drag:none;cursor:grab}
+.laid-card.return-selected-card{outline:2px solid #ffe09a;outline-offset:1px;box-shadow:0 0 0 3px #143c2d}

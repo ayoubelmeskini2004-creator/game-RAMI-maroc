@@ -101,7 +101,7 @@ export function drawCard(game, playerId, payload) {
   candidate.irreversibleRevision=(game.irreversibleRevision??0)+1;
   advanceOwnRevision(candidate,playerId);
   candidate.pickupReturns??={};delete candidate.pickupReturns[playerId];
-  if(taken)candidate.pickupReturns[playerId]={cardId:taken,afterIrreversible:candidate.irreversibleRevision,used:!candidate.hands[playerId].some(card=>card.id===taken),discardIds:candidate.discard.map(card=>card.id)};
+  if(taken)candidate.pickupReturns[playerId]={cardId:taken,afterIrreversible:candidate.irreversibleRevision,discardIds:candidate.discard.map(card=>card.id)};
   syncDrawPhase(candidate);
   Object.assign(game,candidate);
 }

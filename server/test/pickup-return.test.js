@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createRound,buildDeck,drawCard,discardCard,privateGame } from '../src/game.js';
 import { cancelPickup } from '../src/pickup-return.js';
 import { actOnTurn,ownRevision } from '../src/turns.js';
-import { stageGroups,undoStaging } from '../src/descente.js';
+import { stageGroups,undoStaging,retrieveStaged } from '../src/descente.js';
 import { physicalCards } from '../test-support/match-scenarios.js';
 function setup(){const g=createRound(['a','b']);const starter=g.starterId;discardCard(g,starter,{cardId:g.hands[starter][0].id,revision:0});return{g,actor:g.activePlayerId,other:starter};}
 const payload=(g,id,extra={})=>({revision:g.revision,turnRevision:ownRevision(g,id),...extra});
@@ -39,7 +39,7 @@ test('a return cannot masquerade as a different physical copy or survive a repea
  if(copy)invalid(g,()=>cancelPickup(g,actor,payload(g,actor,{cardId:copy.id})),/exactement/);
  const request=payload(g,actor,{cardId:top.id});cancelPickup(g,actor,request);invalid(g,()=>cancelPickup(g,actor,request),/aucune prise/);
 });
-test('using a pickup in Descente or Collage blocks return even after undoing that use',()=>{
+test('a pickup used in Descente or Collage can return after its reversible use is undone',()=>{
  for(const collage of[false,true]){
   const g=createRound(['a','b']);Object.assign(g,{stock:buildDeck(),hands:{a:[],b:[]},initialDiscard:false,activePlayerId:'a',phase:'draw',contextPlayerId:null,mustDiscard:{a:false,b:false},turns:{}});
   const take=(rank,suit='hearts')=>g.stock.splice(g.stock.findIndex(c=>c.rank===rank&&c.suit===suit),1)[0];
@@ -49,9 +49,12 @@ test('using a pickup in Descente or Collage blocks return even after undoing tha
   while(g.hands.a.length<14)g.hands.a.push(g.stock.pop());while(g.hands.b.length<14)g.hands.b.push(g.stock.pop());g.discard.push(top);
   drawCard(g,'a',{revision:g.revision,source:'discard',...(collage?{target:{ownerId:'a',groupId:'suite'}}:{})});
   if(!collage)actOnTurn(g,'a',{revision:g.revision,groups:[{type:'suite',cardIds:[...cards.map(c=>c.id),top.id]}]},stageGroups);
-  assert.equal(privateGame(g,'a').canCancelDiscard,false);invalid(g,()=>cancelPickup(g,'a',payload(g,'a',{cardId:top.id})),/action de jeu|déjà été utilisée/);
+  assert.equal(privateGame(g,'a').canCancelDiscard,false);invalid(g,()=>cancelPickup(g,'a',payload(g,'a',{cardId:top.id})),/action de jeu|Récupérez/);
   actOnTurn(g,'a',{revision:g.revision,all:true},undoStaging);
-  invalid(g,()=>cancelPickup(g,'a',payload(g,'a',{cardId:top.id})),/déjà été utilisée/);
+  assert.equal(privateGame(g,'a').canCancelDiscard,true);
+  cancelPickup(g,'a',payload(g,'a',{cardId:top.id}));
+  assert.equal(g.discard.at(-1).id,top.id);
+  assert.equal(privateGame(g,'a').canDraw,true);
   const physical=physicalCards(g);assert.equal(new Set(physical.map(c=>c.id)).size,108);
  }
 });

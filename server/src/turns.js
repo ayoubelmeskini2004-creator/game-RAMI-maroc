@@ -34,8 +34,6 @@ export function actOnTurn(game,playerId,payload,operation) {
     }
   }
   operation(candidate,playerId,payload);
-  const pickup=candidate.pickupReturns?.[playerId];
-  if(pickup&&!candidate.hands[playerId].some(card=>card.id===pickup.cardId))pickup.used=true;
   advanceOwnRevision(candidate,playerId);
   saveContext(candidate,playerId);
   candidate.activePlayerId=cursor;

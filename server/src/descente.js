@@ -4,7 +4,7 @@ import { effectiveGroup, findBaseGroup, canCollageOn, extendGroup, validatePrese
 import { replacementBase, prepareRecovery, restoreRecoveredJoker, validateRecoveries } from './joker-state.js';
 import { teamOpeningDonor, validateTeamOpening } from './team-opening.js';
 import { validPosition } from './group-layout.js';
-import { emptyTurn } from './turns.js';
+import { emptyTurn, allTurns } from './turns.js';
 
 const requireMove = (condition) => { if (!condition) throw new Error('Coup invalide'); };
 const physical = (card) => ({ id: card.id, rank: card.rank, suit: card.suit });
@@ -133,6 +133,23 @@ export function undoStaging(game, playerId, payload) {
 
 export function retrieveStaged(game, playerId, payload) {
   validateStagingTurn(game, playerId, payload);
+  if(payload?.selections!==undefined){
+    const selections=payload.selections;
+    requireMove(Array.isArray(selections)&&selections.length>0&&selections.length<=36);
+    requireMove(new Set(selections.map(item=>`${item?.ownerId}:${item?.groupId}`)).size===selections.length);
+    const candidate=copy(game),historyLength=game.turnUndo.length;
+    for(const selection of selections){
+      requireMove(selection&&typeof selection.groupId==='string'&&typeof selection.ownerId==='string');
+      requireMove(Array.isArray(selection.cardIds)&&selection.cardIds.length>0&&selection.cardIds.length<=108&&new Set(selection.cardIds).size===selection.cardIds.length);
+      requireMove(!Object.entries(allTurns(game)).some(([owner,turn])=>owner!==playerId&&turn.collages.some(overlay=>overlay.groupId===selection.groupId)));
+      retrieveStaged(candidate,playerId,{ownerId:selection.ownerId,groupId:selection.groupId,cardIds:selection.cardIds,revision:candidate.revision});
+    }
+    // One gesture is one undoable, atomic operation, even across multiple groups.
+    candidate.turnUndo=[...game.turnUndo,candidate.turnUndo[historyLength]];
+    candidate.revision=game.revision+1;
+    Object.assign(game,candidate);
+    return;
+  }
   const index = game.staged.findIndex((group) => group.id === payload?.groupId);
   if (index === -1) return retrieveCollage(game, playerId, payload);
   requireMove(payload.ownerId === undefined || payload.ownerId === playerId);
@@ -140,14 +157,16 @@ export function retrieveStaged(game, playerId, payload) {
   const group = effectiveGroup(game, playerId, game.staged[index]);
   let returned = group.cards;
   let replacement = null;
-  if (payload.cardId !== undefined) {
-    requireMove(typeof payload.cardId === 'string' && group.cards.some((card) => card.id === payload.cardId));
-    returned = group.cards.filter((card) => card.id === payload.cardId);
+  if (payload.cardId !== undefined || payload.cardIds !== undefined) {
+    const ids=payload.cardIds??[payload.cardId];
+    requireMove(Array.isArray(ids)&&ids.length>0&&new Set(ids).size===ids.length&&Array.from(ids).every(id=>typeof id==='string'&&group.cards.some(card=>card.id===id)));
+    returned = group.cards.filter((card) => ids.includes(card.id));
     const remaining = { ...group, type: group.type === 'carre' ? 'tierce' : group.type,
-      cards: group.cards.filter((card) => card.id !== payload.cardId) };
+      cards: group.cards.filter((card) => !ids.includes(card.id)) };
     const result = validateCombination(groupProposal(remaining), remaining.cards.map(physical));
-    requireMove(result.valid);
-    replacement = { ...group, type: result.type, cards: result.cards };
+    if(result.valid)replacement = { ...group, type: result.type, cards: result.cards };
+    else if(payload.cardIds!==undefined)returned=group.cards; // Dissolve an incomplete provisional group.
+    else requireMove(false);
   }
   remember(game, playerId);
   game.hands[playerId].push(...returned.map(physical));
@@ -202,12 +221,22 @@ function retrieveCollage(game, playerId, payload) {
   const overlay = game.collages.find((item) => item.groupId === payload?.groupId && (payload.ownerId === undefined || item.ownerId === payload.ownerId));
   requireMove(overlay);
   const base = replacementBase(game, overlay.ownerId, findBaseGroup(game, overlay.ownerId, overlay.groupId));
-  const returnedIds = payload.cardId === undefined ? overlay.addedCardIds : [payload.cardId];
-  requireMove(returnedIds.length > 0 && returnedIds.every((id) => overlay.addedCardIds.includes(id)));
-  const returned = overlay.group.cards.filter((card) => returnedIds.includes(card.id));
-  const remaining = { ...overlay.group, cards: overlay.group.cards.filter((card) => !returnedIds.includes(card.id)) };
+  let returnedIds = payload.cardIds ?? (payload.cardId === undefined ? overlay.addedCardIds : [payload.cardId]);
+  requireMove(Array.isArray(returnedIds)&&new Set(returnedIds).size===returnedIds.length);
+  requireMove(returnedIds.length > 0 && Array.from(returnedIds).every((id) => overlay.addedCardIds.includes(id)));
+  let returned = overlay.group.cards.filter((card) => returnedIds.includes(card.id));
+  let remaining = { ...overlay.group, cards: overlay.group.cards.filter((card) => !returnedIds.includes(card.id)) };
   if (base.type === 'tierce' && remaining.cards.length === 3) remaining.type = 'tierce';
-  const result = validatePreservedGroup(base, remaining);
+  let result;
+  try{result=validatePreservedGroup(base, remaining);}
+  catch(error){
+    if(payload.cardIds===undefined)throw error;
+    // Return only this turn's additions; the committed base is never dismantled.
+    returnedIds=overlay.addedCardIds;
+    returned=overlay.group.cards.filter(card=>returnedIds.includes(card.id));
+    remaining={...base,cards:overlay.group.cards.filter(card=>!returnedIds.includes(card.id))};
+    result=validatePreservedGroup(base,remaining);
+  }
   remember(game, playerId);
   game.hands[playerId].push(...returned.map(physical));
   const addedCardIds = overlay.addedCardIds.filter((id) => !returnedIds.includes(id));
