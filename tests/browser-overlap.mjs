@@ -50,10 +50,11 @@ export async function overlappingBrowser(chrome,artifacts){
     await until(()=>b.evaluate(`document.querySelector('[data-card-id="${nine.id}"]')?.disabled===false`),'quatrième carte en main');
     await change(()=>b.drag(`[data-card-id="${nine.id}"]`,'[data-group-id="tierce-nine"] .laid-card:last-child'),'quatrième carte depuis la main directement sur une carte de Tierce');
     await until(()=>a.evaluate(`document.querySelectorAll('[data-group-id="tierce-nine"] .laid-card').length===4`),'Carré public après Collage depuis la main');
-    // A draws while B still owes its own discard.
-    await change(()=>a.click('[aria-label="Piocher une carte"]'),'pioche avant défausse adverse');
-    assert.ok(engine.mustDiscard[engine.order[0]]&&engine.mustDiscard[engine.order[1]]);
+    // Direct discard pickup holds the draw cursor until its legal use is committed.
+    await until(()=>a.evaluate(`document.querySelector('[aria-label="Piocher une carte"]').disabled`),'pioche bloquée pendant la décision');
+    assert.equal(engine.mustDiscard[engine.order[0]],false);
     await discard(b,three.id);assert.equal(engine.laid[engine.order[1]][0].type,'carre');
+    await change(()=>a.click('[aria-label="Piocher une carte"]'),'pioche après validation de la prise adverse');
     await change(()=>b.click('[aria-label="Piocher une carte"]'),'nouvelle pioche après défausse personnelle');
     assert.equal(await a.evaluate(`document.querySelector('[aria-label="Piocher une carte"]').disabled`),true);
     assert.equal(engine.mustDiscard[engine.order[0]],true);
@@ -66,7 +67,7 @@ export async function overlappingBrowser(chrome,artifacts){
     await until(()=>a.evaluate(`document.querySelector('[aria-label="Prendre la dernière carte de la défausse"]').disabled===false`),'prise autorisée');
     await change(()=>a.drag('[aria-label="Prendre la dernière carte de la défausse"]','.own-hand',{insertion:true,targetPoint:{x:.8,y:.5}}),'défausse vers main privée');
     assert.ok(engine.hands[engine.order[0]].some(c=>c.id===three.id));assert.equal(engine.opened[engine.order[0]],false);
-    await pick(a,end.id);await a.button('Défausser','.table-actions');await until(()=>a.evaluate('document.querySelector(".match-error")?.textContent.startsWith("Ouverture incomplète")'),'ouverture obligatoire');await pick(a,end.id);
+    await pick(a,end.id);assert.equal(await a.evaluate('[...document.querySelectorAll(".table-actions button")].find(b=>b.textContent==="Défausser").disabled'),true);await a.drag(`.own-hand [data-card-id="${end.id}"]`,'.discard-pile');await until(()=>a.evaluate('document.querySelector(".match-error")?.textContent.startsWith("Utilisez la carte prise")'),'utilisation de la prise obligatoire');await pick(a,end.id);
     await a.button('Descendre','.table-actions');let available=engine.hands[engine.order[0]].map(c=>c.id);
     for(const proposal of[...core,extra]){
      await a.fill('.composer-fields select',proposal.type,true);for(const id of proposal.cardIds)await a.click(`.composer-card:nth-child(${available.indexOf(id)+1})`);

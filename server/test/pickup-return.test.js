@@ -25,13 +25,12 @@ test('returning the exact pickup restores the pile and draw right without consum
  drawCard(g,actor,{revision:g.revision,source:'stock'});invalid(g,()=>cancelPickup(g,actor,payload(g,actor,{cardId:top})),/aucune prise/);
  const cards=physicalCards(g);assert.equal(cards.length,108);assert.equal(new Set(cards.map(c=>c.id)).size,108);
 });
-test('a following draw or changed pile makes return impossible and preserves all current rights',()=>{
- for(const action of['draw','discard']){
-  const{g,actor,other}=setup(),top=g.discard.at(-1).id;drawCard(g,actor,{revision:g.revision,source:'discard',cardId:top});
-  drawCard(g,other,{revision:g.revision,source:'stock'});
-  if(action==='discard')discardCard(g,other,payload(g,other,{cardId:g.hands[other][0].id}));
-  assert.equal(privateGame(g,actor).canCancelDiscard,false);invalid(g,()=>cancelPickup(g,actor,payload(g,actor,{cardId:top})),/action de jeu/);
- }
+test('the following player cannot draw or change the pile before the pickup decision',()=>{
+ const{g,actor,other}=setup(),top=g.discard.at(-1).id;drawCard(g,actor,{revision:g.revision,source:'discard',cardId:top});
+ invalid(g,()=>drawCard(g,other,{revision:g.revision,source:'stock'}),/décision/);
+ assert.equal(privateGame(g,other).canDraw,false);assert.equal(privateGame(g,actor).canCancelDiscard,true);
+ cancelPickup(g,actor,payload(g,actor,{cardId:top}));assert.equal(privateGame(g,actor).canDraw,true);
+ drawCard(g,actor,{revision:g.revision,source:'stock'});assert.equal(privateGame(g,other).canDraw,true);
 });
 test('a return cannot masquerade as a different physical copy or survive a repeated request',()=>{
  const{g,actor}=setup();const top=g.discard.at(-1);const copy=[...g.stock,...Object.values(g.hands).flat()].find(card=>card.id!==top.id&&card.rank===top.rank&&card.suit===top.suit);

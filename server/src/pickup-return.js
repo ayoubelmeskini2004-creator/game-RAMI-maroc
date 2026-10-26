@@ -1,5 +1,7 @@
 import { allTurns, emptyTurn, advanceOwnRevision, syncDrawPhase } from './turns.js';
 import { moveError } from './move-error.js';
+// A discard pickup remains reversible until its owner commits a legal use or returns it.
+export const pickupDecisionOwner=game=>game?.order.find(id=>game.mustDiscard[id]&&game.pickupReturns?.[id])??null;
 export function pickupReturnReason(game,playerId) {
   const checkpoint=game.pickupReturns?.[playerId];
   if(!checkpoint)return 'Vous n’avez aucune prise de Défausse à annuler.';

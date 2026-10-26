@@ -123,8 +123,8 @@ export async function interactions(chrome, artifacts) {
         assert.equal(engine.opened[engine.order[0]],false);
         await compose(proposals);
         await change(()=>actor.button('Tout annuler','.undo-actions'),'annuler les poses sans rendre la prise');
-        await pick(end.id);await actor.button('Défausser','.table-actions');
-        await until(()=>actor.evaluate('document.querySelector(".match-error")?.textContent.startsWith("Ouverture incomplète")'),'ouverture obligatoire après prise');
+        await pick(end.id);
+        assert.equal(await actor.evaluate('[...document.querySelectorAll(".table-actions button")].find(b=>b.textContent==="Défausser").disabled'),true,'prise inutilisée interdit la défausse');
         await pick(end.id);await compose(proposals);await pick(end.id);await change(()=>actor.button('Défausser','.table-actions'),'ouverture engagée à sa défausse');
         assert.equal(engine.opened[engine.order[0]], true); assert.equal(engine.firstOpening.total, 78);
         assert.notEqual(engine.activePlayerId,engine.order[0]);assert.equal(engine.staged.length,0);

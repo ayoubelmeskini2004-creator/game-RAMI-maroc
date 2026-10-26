@@ -9,6 +9,7 @@ export function discardDrop(data, game, playerId) {
     if(!game.canCancelDiscard)return {error:game.cancelPickupReason??'Cette prise ne peut plus être annulée.'};
     return {event:'game:cancel-discard',cardId:data.cardId};
   }
+  if(!game.canDiscard&&game.pickupDecisionPlayerId)return {error:game.pickupDecisionPlayerId===playerId?'Utilisez la carte prise dans une Descente ou un Collage légal, ou rendez exactement cette carte à la Défausse.':'Attendez la décision de prise de Défausse avant de défausser.'};
   if(!game.canDiscard)return {error:'Vous devez d’abord piocher : vous n’avez pas de défausse en attente.'};
   if(game.recoveredJokerIds.includes(data.cardId))return {error:'Ce Joker récupéré doit être rejoué dans une combinaison avant de défausser.'};
   return {event:'game:discard',cardId:data.cardId};

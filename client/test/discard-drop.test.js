@@ -25,3 +25,10 @@ test('gameplay drags tolerate independent remote changes only with the unchanged
  assert.equal(validHandDrag(data,'other',state,'me'),true);
  for(const changed of [{turnRevision:2},{turnRevision:undefined},{revision:9},{roundId:'old'},{cardIds:['absent','other']}])assert.equal(validHandDrag({...data,...changed},'other',state,'me'),false);
 });
+
+test('a pending discard decision permits only its exact return and explains why other discards wait',()=>{
+ const state={...game,canDiscard:false,pickupDecisionPlayerId:'me'};
+ assert.equal(discardDrop(drag('taken'),state,'me').event,'game:cancel-discard');
+ assert.match(discardDrop(drag('other'),state,'me').error,/Utilisez la carte prise/);
+ assert.match(discardDrop(drag('other'),{...state,pickupDecisionPlayerId:'them',cancelPickupCardId:null},'me').error,/Attendez la décision/);
+});

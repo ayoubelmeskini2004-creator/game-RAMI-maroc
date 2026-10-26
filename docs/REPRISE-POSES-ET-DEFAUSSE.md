@@ -11,7 +11,7 @@ Le fait d’avoir provisoirement utilisé la carte prise ne bloque plus son reto
 
 Les boutons **Annuler**, **Tout annuler**, **Reprendre** et **Annuler la prise** restent disponibles selon leurs conditions habituelles. Annuler peut rétablir une récupération effectuée à la souris. Les poses engagées lors d’une défausse, les cartes des autres joueurs, les sources de récupération de Joker encore remplacées, les demandes périmées et les groupes réservés à une préparation adverse ne peuvent pas être récupérés ainsi.
 
-Une action irréversible depuis la prise, notamment une pioche ou une défausse adverse, continue d’interdire le retour exact. Les validations des ouvertures, des combinaisons, du Collage et des Jokers restent côté serveur. Le retour d’une sélection est atomique et produit une seule entrée d’annulation ; les autres joueurs reçoivent la mise à jour via Socket.IO sans voir les faces des cartes revenues dans la main privée.
+Pendant la décision de prise, les pioches et les défausses adverses sont maintenant refusées côté serveur pour préserver le retour exact. Les essais réversibles restent autorisés. La défausse personnelle confirme l’utilisation de la carte prise et lève le verrou ; sa restitution exacte permet au contraire de piocher au stock sans terminer le tour. Voir [Décision de Défausse](DECISION-DEFAUSSE.md). Les validations des ouvertures, des combinaisons, du Collage et des Jokers restent côté serveur. Le retour d’une sélection est atomique et produit une seule entrée d’annulation ; les autres joueurs reçoivent la mise à jour via Socket.IO sans voir les faces des cartes revenues dans la main privée.
 
 ## Vérifications reproductibles
 
