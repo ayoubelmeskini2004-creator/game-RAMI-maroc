@@ -82,9 +82,9 @@ test('2v2 special discard opening, inherited Collage and Joker recovery synchron
   state=(await request(actor.socket,'game:undo',{all:true,revision:state.revision})).game;
   assertInvalid(await request(actor.socket,'game:discard',{cardId:end.id,revision:state.revision}));
   state=(await request(actor.socket,'game:stage',{groups:[suite],revision:state.revision})).game;
-  // Let the next player draw while the actor still prepares their opening.
+  // A discard pickup reserves the decision until its final commit.
   const next=players.find(p=>p.playerId===state.activePlayerId);
-  const nextState=(await request(next.socket,'game:draw',{source:'stock',revision:state.revision})).game;assert.equal(nextState.mustDiscard[actor.playerId],true);
+  assertInvalid(await request(next.socket,'game:draw',{source:'stock',revision:state.revision}));
   state=(await request(actor.socket,'game:state')).game;
   for (const addition of additions) {
     const revision = state.revision + 1; update = gameUpdate(witness.socket, (g) => g.revision === revision);
@@ -212,9 +212,9 @@ test('overlapping socket draws, simultaneous discards, exclusive top pickup and 
   const pickups=await Promise.all([cursor,cursor,other].map(p=>request(p.socket,'game:draw',{source:'discard',cardId:top,revision:state.revision})));
   assert.equal(pickups.filter(r=>r.ok).length,1);assert.equal(Object.values(engine.hands).flat().filter(c=>c.id===top).length,1);
   const disconnected=roomUpdate(other.socket,room=>!room.players.find(p=>p.id===cursor.playerId).connected);cursor.socket.disconnect();await disconnected;
-  const nextDraw=await request(other.socket,'game:draw',{source:'stock',revision:engine.revision});assert.equal(nextDraw.ok,true);
+  const nextDraw=await request(other.socket,'game:draw',{source:'stock',revision:engine.revision});assertInvalid(nextDraw);
   const replacement=await client(),resumed=await request(replacement,'room:resume',{token:cursor.token});
-  assert.equal(resumed.playerId,cursor.playerId);assert.equal(resumed.game.canDiscard,true);assert.equal(resumed.game.canStage,true);assert.ok(resumed.game.hand.some(c=>c.id===top));
+  assert.equal(resumed.playerId,cursor.playerId);assert.equal(resumed.game.canDiscard,false);assert.equal(resumed.game.canStage,true);assert.ok(resumed.game.hand.some(c=>c.id===top));
   assertInvalid(await request(replacement,'game:discard',{cardId:resumed.game.hand[0].id,revision:resumed.game.revision}));
   for(const card of engine.hands[other.playerId])assert.equal(JSON.stringify(resumed.game).includes(card.id),false);
   const physical=[...engine.stock,...engine.discard,...Object.values(engine.hands).flat()];assert.equal(physical.length,108);assert.equal(new Set(physical.map(c=>c.id)).size,108);
@@ -730,7 +730,12 @@ test('conditional discard pickup permits preparation but own discard requires a 
  state=(await request(guest.socket,'game:stage',{groups:groups.slice(0,2),revision:state.revision})).game;
  assertInvalid(await request(guest.socket,'game:discard',{cardId:top.id,revision:state.revision}));
  state=(await request(guest.socket,'game:stage',{groups:groups.slice(2),revision:state.revision})).game;
- const update=gameUpdate(host.socket,g=>g.opened[guest.playerId]);state=(await request(guest.socket,'game:discard',{cardId:top.id,revision:state.revision})).game;const observer=await update;
+ assertInvalid(await request(guest.socket,'game:discard',{cardId:top.id,revision:state.revision}));
+ state=(await request(guest.socket,'game:undo',{all:true,revision:state.revision})).game;
+ state=(await request(guest.socket,'game:cancel-discard',{cardId:top.id,revision:state.revision})).game;
+ state=(await request(guest.socket,'game:draw',{source:'stock',revision:state.revision})).game;
+ state=(await request(guest.socket,'game:stage',{groups,revision:state.revision})).game;
+ const update=gameUpdate(host.socket,g=>g.opened[guest.playerId]);state=(await request(guest.socket,'game:discard',{cardId:state.hand[0].id,revision:state.revision})).game;const observer=await update;
  assert.equal(state.opened[guest.playerId],true);assert.equal(state.firstOpening.total,72);assert.equal(state.staged.length,0);assert.equal(state.activePlayerId,host.playerId);
  for(const card of state.hand)assert.equal(JSON.stringify(observer).includes(card.id),false);
 });
@@ -845,3 +850,64 @@ test('same-turn Descente allows own staged Collage before opening is committed a
   assert.equal(state.openingTotals[guest.playerId], 79); assert.equal(state.firstOpening.total, 79);
   assert.equal(state.laid[guest.playerId][0].cards.length, 4); assert.equal(state.collages.length, 0);
 });
+
+for (const actorIndex of [0, 1]) for (const use of ['descente', 'collage']) for (const decision of ['return', 'commit']) {
+ test(`two live players: player ${actorIndex + 1} tries, undoes, returns, draws or commits pickup via ${use} (${decision})`, {timeout:10000}, async t => {
+  let engine, top, cards, end;
+  const {request,create,join}=await setup(t,{makeRound:order=>{
+   engine=createRound(order);
+   Object.assign(engine,{stock:buildDeck(),hands:Object.fromEntries(order.map(id=>[id,[]])),initialDiscard:false,phase:'draw',activePlayerId:order[actorIndex],contextPlayerId:null,turns:{},mustDiscard:Object.fromEntries(order.map(id=>[id,false])),opened:Object.fromEntries(order.map(id=>[id,true])),openingTotals:Object.fromEntries(order.map(id=>[id,71]))});
+   const take=rank=>engine.stock.splice(engine.stock.findIndex(c=>c.rank===rank&&c.suit==='hearts'),1)[0];
+   top=take('4');cards=['2','3'].map(take);end=take('R');
+   engine.hands[order[actorIndex]].push(...cards,end);
+   if(use==='collage') engine.laid[order[actorIndex]].push({id:'base',type:'suite',cards:['5','6','7'].map(take)});
+   for(const id of order)while(engine.hands[id].length<14)engine.hands[id].push(engine.stock.pop());
+   engine.discard.push(top);return engine;
+  }});
+  const host=await create(),guest=await join(host.room.code),players=[host,guest];
+  for(const p of players)await request(p.socket,'player:ready',{ready:true});await request(host.socket,'room:start');
+  const actor=players[actorIndex],other=players[1-actorIndex];
+  const state=async p=>(await request(p.socket,'game:state')).game;
+  async function move(event,data={}) {const g=await state(actor);const result=await request(actor.socket,event,{revision:g.revision,...data});assert.equal(result.ok,true,JSON.stringify(result));return result.game;}
+  async function blocked() {const g=await state(other);assert.equal(g.canDraw,false);const before=structuredClone(engine);assertInvalid(await request(other.socket,'game:draw',{source:'stock',revision:g.revision}));assert.deepEqual(engine,before);}
+  async function stage() {return use==='descente'?move('game:stage',{groups:[{type:'suite',cardIds:[...cards.map(c=>c.id),top.id]}]}):move('game:collage',{ownerId:actor.playerId,groupId:'base',cardIds:[top.id]});}
+  await move('game:draw',{source:'discard',cardId:top.id});await blocked();
+  let g=await state(actor);assertInvalid(await request(actor.socket,'game:discard',{cardId:end.id,revision:g.revision}));
+  assertInvalid(await request(actor.socket,'game:discard',{cardId:top.id,revision:g.revision}));
+  await stage();await blocked();await move('game:undo',{all:false});await blocked();
+  g=await state(actor);assert.equal(g.canCancelDiscard,true);
+  assertInvalid(await request(actor.socket,'game:cancel-discard',{cardId:end.id,revision:g.revision}));
+  if (decision === 'return') {
+   const beforeHand=engine.hands[actor.playerId].filter(c=>c.id!==top.id);
+   g=await move('game:cancel-discard',{cardId:top.id});
+   assert.deepEqual(g.hand,beforeHand);assert.equal(g.discardTop.id,top.id);
+   assert.equal(g.mustDiscard[actor.playerId],false);assert.equal(g.canDraw,true);assert.equal(g.canTakeDiscard,false);
+   assert.equal((await state(other)).canDraw,false);
+   g=await move('game:draw',{source:'stock'});
+   assert.equal(g.mustDiscard[actor.playerId],true);assert.equal(g.hand.length,beforeHand.length+1);
+   assert.equal((await state(other)).canDraw,true);
+   await move('game:discard',{cardId:end.id});
+   assert.equal(engine.discard.at(-1).id,end.id);
+   const all=[...engine.stock,...engine.discard,...Object.values(engine.hands).flat(),...Object.values(engine.laid).flat().flatMap(group=>group.cards)];
+   assert.equal(all.length,108);assert.equal(new Set(all.map(c=>c.id)).size,108);
+   return;
+  }
+  // Commit the legal use after trying and undoing it.
+  await stage();await move('game:discard',{cardId:end.id});
+  assert.equal(engine.discard.at(-1).id,end.id);assert.equal((await state(other)).canDraw,true);
+  assert.ok(Object.values(engine.laid).flat().some(group=>group.cards.some(c=>c.id===top.id)));
+  // The other player can try that new discard, then return exactly it and draw stock.
+  let remote=await state(other);
+  remote=(await request(other.socket,'game:draw',{source:'discard',cardId:end.id,revision:remote.revision})).game;
+  assert.ok(remote);assert.equal((await state(actor)).canDraw,false);
+  const stale=remote.revision;
+  remote=(await request(other.socket,'game:cancel-discard',{cardId:end.id,revision:remote.revision})).game;
+  assert.ok(remote);assert.equal(remote.canDraw,true);assert.equal(remote.mustDiscard[other.playerId],false);assert.equal(remote.discardTop.id,end.id);
+  assertInvalid(await request(other.socket,'game:cancel-discard',{cardId:end.id,revision:stale}));
+  assertInvalid(await request(other.socket,'game:draw',{source:'discard',revision:remote.revision}));
+  remote=(await request(other.socket,'game:draw',{source:'stock',revision:remote.revision})).game;
+  assert.ok(remote);assert.equal(remote.mustDiscard[other.playerId],true);
+  const all=[...engine.stock,...engine.discard,...Object.values(engine.hands).flat(),...Object.values(engine.laid).flat().flatMap(g=>g.cards)];
+  assert.equal(all.length,108);assert.equal(new Set(all.map(c=>c.id)).size,108);
+ });
+}

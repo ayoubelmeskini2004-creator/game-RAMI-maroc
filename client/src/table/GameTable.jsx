@@ -177,7 +177,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
   const canStage = available && game?.canStage;
   const canDiscard = available && game?.canDiscard && selected.length === 1 && !game.recoveredJokerIds.includes(selected[0]) && game.hand.some(card=>card.id===selected[0]);
   function takeDiscard(data, target) {
-    if(!canDraw || !validDiscardDrag(data,game,playerId)) {setMoveError('Coup invalide');return;}
+    if(!canDraw || game?.canTakeDiscard===false || !validDiscardDrag(data,game,playerId)) {setMoveError('Coup invalide');return;}
     move('game:draw',{source:'discard',cardId:data.cardId,...(target?{target}:{})});
   }
   function returnPickup(event) {
@@ -228,7 +228,8 @@ export default function GameTable({ room, playerId, socket, connected, error, on
     } catch { setMoveError('Coup invalide'); }
   }
   const waitingNames=room.players.filter(player=>game?.mustDiscard?.[player.id]).map(player=>player.id===playerId?'vous':player.name).join(', ');
-  const turnLabel=game?.phase==='round-ended'?'Manche terminée · Tableau des scores':!game?'Synchronisation de la table…':game.initialDiscard?activeName+' défausse sans piocher':
+  const pickupName=room.players.find(player=>player.id===game?.pickupDecisionPlayerId)?.name;
+  const turnLabel=game?.phase==='round-ended'?'Manche terminée · Tableau des scores':!game?'Synchronisation de la table…':game.initialDiscard?activeName+' défausse sans piocher':game.pickupDecisionPlayerId?`Prise de Défausse : ${pickupName} · utiliser la carte ou annuler la prise`:
     'Pioche : '+activeName+(game.mustDiscard[game.activePlayerId]?' (défausse requise)':'')+(waitingNames?' · Défausse : '+waitingNames:'');
   return <main className="match-screen">
     {discardPointer.preview}
@@ -238,7 +239,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
       <div className="match-room"><span>SALON <strong>{room.code}</strong></span><span>{room.mode === 'teams' ? 'Équipes · 2 contre 2' : 'Individuel'}</span></div>
       <nav aria-label="Informations de la table">{['Scores', 'Historique', 'Paramètres'].map((label) => <button key={label} className="table-nav-button" onClick={() => setDialog(label)}>{label}</button>)}<button className="table-nav-button leave-table" onClick={onLeave} disabled={busy}>Quitter le salon</button></nav>
     </header>
-    <div className="preview-banner"><span className="preview-pill">MANCHE {game?.round ?? '…'}</span><span>{game?.teamOpeningEligible ? "Ouverture d’équipe : une Suite valide suffit, Joker autorisé." : `Ouverture ordinaire : 71 naturels et total ≥ ${game?.minimumOpeningTotal ?? 71}.`} Après pioche : posez puis défaussez. Le suivant peut déjà piocher ou attendre.</span><span className={`table-connection ${connected ? 'connected' : ''}`}>{connected ? '● Connecté' : '○ Reconnexion…'}</span></div>
+    <div className="preview-banner"><span className="preview-pill">MANCHE {game?.round ?? '…'}</span><span>{game?.teamOpeningEligible ? "Ouverture d’équipe : une Suite valide suffit, Joker autorisé." : `Ouverture ordinaire : 71 naturels et total ≥ ${game?.minimumOpeningTotal ?? 71}.`} Après pioche : posez puis défaussez. Après une prise de Défausse, la pioche suivante attend sa validation ou son annulation.</span><span className={`table-connection ${connected ? 'connected' : ''}`}>{connected ? '● Connecté' : '○ Reconnexion…'}</span></div>
     {(error || moveError) && <p className="match-error" role="alert">{error || moveError}</p>}
     <div className="desktop-notice">Cette table est conçue pour un navigateur de bureau, à partir de 1 200 px de large.</div>
     <div className="match-layout">
@@ -249,7 +250,7 @@ export default function GameTable({ room, playerId, socket, connected, error, on
           <div className="table-center">
             <div className="draw-and-discard">
               <div className="pile"><span className="pile-label">Pioche</span><button className="pile-button" aria-label="Piocher une carte" disabled={!canDraw || (!game.stockCount && game.discardCount < 2)} onClick={() => move('game:draw', { source: 'stock' })}><div className="draw-stack">{game?.stockCount ? Array.from({ length: Math.min(3, game.stockCount) }, (_, i) => <PlayingCard key={i} faceDown />) : <span className="empty-pile">Vide</span>}</div></button><small>{game?.stockCount ?? '…'} cartes{game && !game.stockCount && game.discardCount > 1 ? ' · à remélanger' : ''}</small></div>
-              <div className="pile discard-pile" onDragOver={event=>{if((game?.canDiscard||game?.cancelPickupCardId)&&event.dataTransfer.types.includes(CARD_DRAG_TYPE)){event.preventDefault();event.dataTransfer.dropEffect='move';}}} onDrop={returnPickup}><span className="pile-label">Défausse</span><button className="pile-button" data-pointer-drag="discard" aria-label="Prendre la dernière carte de la défausse" title="Prenez cette carte puis ouvrez légalement avant votre défausse" disabled={!canDraw || !game?.discardTop} draggable={false} onDragStart={event=>event.preventDefault()} onPointerDown={event=>discardPointer.start(event,{type:DISCARD_DRAG_TYPE,data:{cardId:game.discardTop.id,playerId,revision:game.revision,roundId:game.roundId},cards:[game.discardTop]})} onClick={()=>move('game:draw',{source:'discard',cardId:game.discardTop.id})}><div className="discard-slot">{game?.discardTop ? <PlayingCard {...game.discardTop} /> : <span className="empty-pile">Vide</span>}</div></button><small>{game?.discardCount ?? 0} carte(s)</small></div>
+              <div className="pile discard-pile" onDragOver={event=>{if((game?.canDiscard||game?.cancelPickupCardId)&&event.dataTransfer.types.includes(CARD_DRAG_TYPE)){event.preventDefault();event.dataTransfer.dropEffect='move';}}} onDrop={returnPickup}><span className="pile-label">Défausse</span><button className="pile-button" data-pointer-drag="discard" aria-label="Prendre la dernière carte de la défausse" title="Utilisez cette carte dans une Descente ou un Collage légal, ou annulez la prise puis piochez" disabled={!canDraw || game?.canTakeDiscard===false || !game?.discardTop} draggable={false} onDragStart={event=>event.preventDefault()} onPointerDown={event=>discardPointer.start(event,{type:DISCARD_DRAG_TYPE,data:{cardId:game.discardTop.id,playerId,revision:game.revision,roundId:game.roundId},cards:[game.discardTop]})} onClick={()=>move('game:draw',{source:'discard',cardId:game.discardTop.id})}><div className="discard-slot">{game?.discardTop ? <PlayingCard {...game.discardTop} /> : <span className="empty-pile">Vide</span>}</div></button><small>{game?.discardCount ?? 0} carte(s)</small></div>
             </div>
           </div>
             <p className="turn-status" role="status" title={turnLabel}><span aria-hidden="true">◉</span> {turnLabel}</p>

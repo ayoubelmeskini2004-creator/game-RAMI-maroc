@@ -25,13 +25,17 @@ test('returning the exact pickup restores the pile and draw right without consum
  drawCard(g,actor,{revision:g.revision,source:'stock'});invalid(g,()=>cancelPickup(g,actor,payload(g,actor,{cardId:top})),/aucune prise/);
  const cards=physicalCards(g);assert.equal(cards.length,108);assert.equal(new Set(cards.map(c=>c.id)).size,108);
 });
-test('a following draw or changed pile makes return impossible and preserves all current rights',()=>{
- for(const action of['draw','discard']){
-  const{g,actor,other}=setup(),top=g.discard.at(-1).id;drawCard(g,actor,{revision:g.revision,source:'discard',cardId:top});
-  drawCard(g,other,{revision:g.revision,source:'stock'});
-  if(action==='discard')discardCard(g,other,payload(g,other,{cardId:g.hands[other][0].id}));
-  assert.equal(privateGame(g,actor).canCancelDiscard,false);invalid(g,()=>cancelPickup(g,actor,payload(g,actor,{cardId:top})),/action de jeu/);
- }
+test('a pending pickup blocks the following draw and preserves its exact return',()=>{
+ const{g,actor,other}=setup(),top=g.discard.at(-1).id;
+ drawCard(g,actor,{revision:g.revision,source:'discard',cardId:top});
+ assert.equal(privateGame(g,other).canDraw,false);
+ invalid(g,()=>drawCard(g,other,{revision:g.revision,source:'stock'}),/prise de Défausse/);
+ assert.equal(privateGame(g,actor).canCancelDiscard,true);
+ cancelPickup(g,actor,payload(g,actor,{cardId:top}));
+ const before=structuredClone(g);
+ assert.throws(()=>drawCard(g,actor,{revision:g.revision,source:'discard'}),{message:'Coup invalide'});assert.deepEqual(g,before);
+ drawCard(g,actor,{revision:g.revision,source:'stock'});
+ assert.equal(privateGame(g,other).canDraw,true);
 });
 test('a return cannot masquerade as a different physical copy or survive a repeated request',()=>{
  const{g,actor}=setup();const top=g.discard.at(-1);const copy=[...g.stock,...Object.values(g.hands).flat()].find(card=>card.id!==top.id&&card.rank===top.rank&&card.suit===top.suit);
@@ -65,4 +69,27 @@ test('undoing an unrelated reversible pose permits return if the picked card was
  drawCard(g,'a',{revision:g.revision,source:'discard'});actOnTurn(g,'a',{revision:g.revision,groups:[{type:'suite',cardIds:cards.map(c=>c.id)}]},stageGroups);
  assert.equal(privateGame(g,'a').canCancelDiscard,false);actOnTurn(g,'a',{revision:g.revision,all:true},undoStaging);
  assert.equal(privateGame(g,'a').canCancelDiscard,true);cancelPickup(g,'a',payload(g,'a',{cardId:top.id}));assert.equal(g.discard.at(-1).id,top.id);assert.equal(g.hands.a.length,14);
+});
+
+for (const count of [2,3,4]) test(`${count} players: a pending pickup reserves piles without blocking reversible preparations`,()=>{
+ const g=createRound(['a','b','c','d'].slice(0,count));
+ discardCard(g,g.starterId,{cardId:g.hands[g.starterId][0].id,revision:g.revision});
+ // Start a stock preparation before the next player takes the discard.
+ const preparing=g.activePlayerId;
+ drawCard(g,preparing,{source:'stock',revision:g.revision});
+ const actor=g.activePlayerId,top=g.discard.at(-1).id;
+ drawCard(g,actor,{source:'discard',cardId:top,revision:g.revision});
+ assert.equal(privateGame(g,actor).pickupDecisionPlayerId,actor);
+ invalid(g,()=>discardCard(g,preparing,payload(g,preparing,{cardId:g.hands[preparing][0].id})),/décision/);
+ for(const id of g.order){
+  assert.equal(privateGame(g,id).canDraw,false);
+  invalid(g,()=>drawCard(g,id,{source:'stock',revision:g.revision}),/prise de Défausse/);
+ }
+ cancelPickup(g,actor,payload(g,actor,{cardId:top}));
+ assert.equal(privateGame(g,actor).pickupDecisionPlayerId,null);
+ assert.equal(privateGame(g,actor).canTakeDiscard,false);
+ drawCard(g,actor,{source:'stock',revision:g.revision});
+ assert.equal(privateGame(g,actor).canTakeDiscard,true);
+ assert.equal(g.mustDiscard[preparing],true);
+ const all=physicalCards(g);assert.equal(all.length,108);assert.equal(new Set(all.map(c=>c.id)).size,108);
 });

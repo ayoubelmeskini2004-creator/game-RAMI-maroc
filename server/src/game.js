@@ -71,9 +71,13 @@ function validateTurn(game, playerId, revision, phase) {
 }
 
 export function drawCard(game, playerId, payload) {
+  // Reserve both piles until the pickup is committed or returned; reversible poses do not release it.
+  if (game && Object.keys(game.pickupReturns ?? {}).length) throw moveError('La prise de Défausse doit être utilisée et validée, ou annulée, avant une nouvelle pioche.');
   validateTurn(game,playerId,payload?.revision,'draw');
   requireMove(!game.initialDiscard && !game.mustDiscard[playerId] && ['stock','discard'].includes(payload?.source));
+  requireMove(game.returnStockPlayerId !== playerId || payload.source === 'stock');
   const candidate=structuredClone(game);
+  candidate.returnStockPlayerId = null;
   candidate.turns=structuredClone(allTurns(game));
   let taken=null;
   if(payload.source==='discard') {
@@ -125,6 +129,7 @@ export function discardCard(game, playerId, payload) {
   const fresh=payload?.turnRevision===undefined?payload?.revision===game.revision:Number.isSafeInteger(payload?.revision)&&payload.revision>=0&&payload.revision<=game.revision&&payload.turnRevision===ownRevision(game,playerId);
   if(!fresh)throw moveError('Votre main ou vos poses ont changé. Vérifiez votre sélection avant de défausser.');
   if(game.initialDiscard&&playerId!==game.starterId)throw moveError('Seul le joueur ayant reçu 15 cartes effectue la première défausse.');
+  if (Object.keys(game.pickupReturns ?? {}).some(id => id !== playerId)) throw moveError('Attendez la décision du joueur ayant pris la Défausse avant de défausser.');
   const cursor=game.activePlayerId,initial=game.initialDiscard;
   const candidate=structuredClone(game);candidate.turns=structuredClone(allTurns(game));
   Object.assign(candidate,playerContext(candidate,playerId));
@@ -135,6 +140,12 @@ export function discardCard(game, playerId, payload) {
   if(!candidate.opened[playerId]&&(candidate.staged.length||candidate.discardTakenCardId!==null)){
     const status=openingStatus(candidate,playerId);
     if(!status.valid)throw moveError(status.kind==='team'?'Ouverture d’équipe incomplète : posez au moins une Suite valide avant de défausser.':`Ouverture incomplète : une Suite pure, une Tierce pure, 71 points naturels et ${status.minimumTotal} points posés sont requis. La carte prise ne peut pas servir dans les groupes purs obligatoires.`);
+  }
+  if (candidate.discardTakenCardId !== null) {
+    const taken = candidate.discardTakenCardId;
+    const used = candidate.staged.some(group => group.cards.some(card => card.id === taken))
+      || candidate.collages.some(overlay => overlay.addedCardIds.includes(taken) && overlay.group.cards.some(card => card.id === taken));
+    if (!used || candidate.hands[playerId].some(card => card.id === taken)) throw moveError('Utilisez la carte prise dans une Descente ou un Collage légal, ou annulez la prise puis piochez dans la Pioche.');
   }
   let opening;
   try{opening=validateStagedCommit(candidate,playerId);}catch{throw moveError('Vos poses ou Collages ne sont plus valides. Corrigez-les ou annulez-les avant de défausser.');}
@@ -164,6 +175,7 @@ export function publicGame(game) {
   const recoveries=Object.entries(turns).flatMap(([actorId,turn])=>turn.recoveries.map(record=>({actorId,ownerId:record.ownerId,groupId:record.groupId,jokerId:record.joker.id,replacementCardId:record.natural.id})));
   return { round: game.round, roundId: game.roundId, revision: game.revision, order: [...game.order], starterId: game.starterId,
     activePlayerId: game.activePlayerId, phase: game.phase, initialDiscard: game.initialDiscard,
+    pickupDecisionPlayerId: Object.keys(game.pickupReturns ?? {})[0] ?? null,
     mustDiscard: { ...game.mustDiscard }, groupPositions: structuredClone(game.groupPositions ?? {}), layoutRevision: game.layoutRevision ?? 0,
     stockCount: game.stock.length, discardCount: game.discard.length,
     discardTop: game.discard.at(-1) ? { ...game.discard.at(-1) } : null,
@@ -182,8 +194,10 @@ export function privateGame(game, playerId) {
   const blockedGroupIds=Object.entries(allTurns(game)).filter(([id])=>id!==playerId).flatMap(([,turn])=>turn.collages.map(overlay=>overlay.groupId));
   const returnReason=pickupReturnReason(game,playerId);
   return {...publicGame(game),viewerId:playerId,turnRevision:ownRevision(game,playerId),hand:game.hands[playerId].map(card=>({...card})),
-    canDraw:game.phase!=='round-ended'&&!game.initialDiscard&&game.activePlayerId===playerId&&!owes,
-    canDiscard:game.phase!=='round-ended'&&owes,
+    canDraw:game.phase!=='round-ended'&&!game.initialDiscard&&game.activePlayerId===playerId&&!owes&&!Object.keys(game.pickupReturns??{}).length,
+    canDiscard:game.phase!=='round-ended'&&owes&&!Object.keys(game.pickupReturns??{}).some(id=>id!==playerId)
+      &&(context.discardTakenCardId===null||!game.hands[playerId].some(card=>card.id===context.discardTakenCardId)),
+    canTakeDiscard:game.returnStockPlayerId!==playerId,
     canStage:game.phase!=='round-ended'&&!game.initialDiscard&&owes,
     teamOpeningEligible:teamOpeningDonor(game,playerId)!==null,
     canUndo:owes&&context.turnUndo.length>0,canCancelDiscard:returnReason===null,cancelPickupCardId:game.pickupReturns?.[playerId]?.cardId??null,cancelPickupReason:returnReason,blockedGroupIds,

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: game-rami-maroc-test
+    runtime: node
+    plan: free
+    branch: codex/render-discard-fix
+    buildCommand: npm ci --include=dev --no-audit --no-fund && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: off
+    envVars:
+      - key: NODE_VERSION
+        value: "24.19.0"
+      - key: NODE_ENV
+        value: production

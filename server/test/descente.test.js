@@ -229,12 +229,12 @@ test('retrieval may invalidate aggregate opening, but discard cannot commit it; 
 
 test('unopened discard pickup stays private in hand until a valid opening and own final discard',()=>{
  const {game,core,extra,begin,take}=fixture();const groups=core();const end=extra();begin();game.phase='draw';game.mustDiscard.a=false;
- const top=take('3','spades');game.discard.push(top);
+ const top=take('3','spades');const cards=[take('A','spades'),take('2','spades')];game.hands.a.push(...cards);groups.push({type:'suite',cardIds:[...cards.map(c=>c.id),top.id]});game.discard.push(top);
  drawCard(game,'a',{revision:game.revision,source:'discard'});
  assert.equal(game.opened.a,false);assert.equal(game.activePlayerId,'b');assert.equal(privateGame(game,'a').canStage,true);
  invalid(game,()=>discardCard(game,'a',{revision:game.revision,cardId:end.id}));
  stageGroups(game,'a',{revision:game.revision,groups});discardCard(game,'a',{revision:game.revision,cardId:end.id});
- assert.equal(game.opened.a,true);assert.equal(game.laid.a.length,3);assert.equal(game.activePlayerId,'b');conserve(game);
+ assert.equal(game.opened.a,true);assert.equal(game.laid.a.length,4);assert.equal(game.activePlayerId,'b');conserve(game);
 });
 
 test('discard pickup cannot supply a mandatory pure group and escalation is enforced at own discard',()=>{
@@ -250,13 +250,13 @@ test('discard pickup cannot supply a mandatory pure group and escalation is enfo
 test('successful opening-from-discard commits on own discard and preserves top-only pickup for opened players', () => {
   const { game, core, extra, begin, take } = fixture();
   const groups = core(); const end = extra(); begin(); game.phase = 'draw'; game.mustDiscard.a=false;
-  const buried = take('3', 'spades'), top = take('4', 'spades'); game.discard.push(buried, top);
+  const buried = take('9', 'spades'), top = take('4', 'spades'); const cards=[take('2','spades'),take('3','spades')];game.hands.a.push(...cards);groups.push({type:'suite',cardIds:[...cards.map(c=>c.id),top.id]}); game.discard.push(buried, top);
   drawCard(game, 'a', { revision: game.revision, source: 'discard', openingGroups: groups });
   assert.deepEqual(game.discard, [buried]);
   game.activePlayerId = 'a'; game.phase = 'discard';
   discardCard(game, 'a', { revision: game.revision, cardId: end.id });
   assert.equal(game.opened.a, true);
-  assert.equal(game.firstOpening.total, 72);
+  assert.equal(game.firstOpening.total, 81);
   game.activePlayerId = 'a'; game.phase = 'draw'; game.mustDiscard.a=false;
   drawCard(game, 'a', { revision: game.revision, source: 'discard' });
   assert.equal(game.hands.a.at(-1).id, end.id);

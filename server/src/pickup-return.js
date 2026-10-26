@@ -24,7 +24,7 @@ export function cancelPickup(game,playerId,payload) {
   candidate.discard.push(candidate.hands[playerId].splice(index,1)[0]);
   candidate.mustDiscard[playerId]=false;delete candidate.turns[playerId];delete candidate.pickupReturns[playerId];
   Object.assign(candidate,emptyTurn());candidate.contextPlayerId=null;
-  candidate.activePlayerId=playerId;candidate.revision++;
+  candidate.activePlayerId=playerId;candidate.returnStockPlayerId=playerId;candidate.revision++;
   candidate.irreversibleRevision=(game.irreversibleRevision??0)+1;
   advanceOwnRevision(candidate,playerId);syncDrawPhase(candidate);
   Object.assign(game,candidate);

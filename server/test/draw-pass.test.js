@@ -53,7 +53,7 @@ test('no staging before draw; discard clears only the actor obligation and prese
  invalid(f.game,()=>f.stage(groups));
 });
 test('unopened discard pickup allows in-hand preparation, while its opening stays mandatory',()=>{
- const f=fixture(),groups=f.core();const top=f.take('3','spades');f.game.discard.push(top);f.draw('discard');
+ const f=fixture(),groups=f.core();const top=f.take('3','spades');groups.push({type:'suite',cardIds:[f.hand('A','spades').id,f.hand('2','spades').id,top.id]});f.game.discard.push(top);f.draw('discard');
  assert.ok(f.game.hands.a.some(c=>c.id===top.id));assert.equal(f.game.opened.a,false);
  invalid(f.game,()=>discardCard(f.game,'a',{cardId:f.end.id,revision:f.game.revision}));
  f.stage(groups);discardCard(f.game,'a',{cardId:f.end.id,revision:f.game.revision});assert.equal(f.game.opened.a,true);
